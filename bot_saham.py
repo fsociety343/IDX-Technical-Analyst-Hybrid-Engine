@@ -13,28 +13,29 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Inisialisasi Gemini Client versi terbaru
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+def get_safe_value(row, prefix):
+    """Mencari nilai indikator berdasarkan awalan (prefix) agar kebal terhadap perubahan nama kolom."""
+    for col in row.index:
+        if str(col).startswith(prefix):
+            val = row[col]
+            return round(float(val), 2) if pd.notna(val) else 0
+    return 0
 
 def get_technical_data(ticker):
     """Mengambil data pasar dan menghitung indikator teknikal."""
     try:
-        # Perbaikan Ekstraksi Data
         stock = yf.Ticker(ticker)
         df = stock.history(period="1y")
         
         if df.empty:
             return None
 
-        # ========================================================
-        # PERBAIKAN BULLETPROOF UNTUK ERROR MULTIINDEX YFINANCE
-        # ========================================================
+        # Fix MultiIndex yfinance
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
-        
-        # Pastikan nama kolom berformat string (mencegah error pandas_ta)
         df.columns = [str(col) for col in df.columns]
-        # ========================================================
 
         # 1. Moving Averages
         df.ta.sma(length=10, append=True)
@@ -51,38 +52,41 @@ def get_technical_data(ticker):
         df['VOL_SMA_20'] = df['Volume'].rolling(window=20).mean()
         df.ta.mfi(length=14, append=True)
 
-        # 4. Support & Resistance (High/Low 3 Bulan Terakhir)
+        # 4. Support & Resistance
         last_3_months = df.tail(60)
         resistance = last_3_months['High'].max()
         support = last_3_months['Low'].min()
 
         latest = df.iloc[-1]
 
-        # 5. Deteksi Fase Market Sederhana
+        # 5. Deteksi Fase Market
         phase = "Sideways / Konsolidasi 🟡"
-        if latest['SMA_10'] > latest['SMA_50'] and latest['Volume'] > latest['VOL_SMA_20']:
+        sma10 = get_safe_value(latest, 'SMA_10')
+        sma50 = get_safe_value(latest, 'SMA_50')
+        vol = float(latest['Volume']) if pd.notna(latest['Volume']) else 0
+        vol_sma20 = float(latest['VOL_SMA_20']) if pd.notna(latest['VOL_SMA_20']) else 0
+
+        if sma10 > sma50 and vol > vol_sma20:
             phase = "Akumulasi / Markup (Bullish) 🟢"
-        elif latest['SMA_10'] < latest['SMA_50'] and latest['Volume'] > latest['VOL_SMA_20']:
+        elif sma10 < sma50 and vol > vol_sma20:
             phase = "Distribusi / Markdown (Bearish) 🔴"
 
-        # Proteksi error NaN
-        ma200_val = 0 if pd.isna(latest['SMA_200']) else float(latest['SMA_200'])
-
+        # Menggunakan pencarian dinamis (get_safe_value) untuk semua indikator rentan
         data_summary = {
             "Ticker": ticker,
             "Close Price": round(float(latest['Close']), 2),
-            "MA10": round(float(latest['SMA_10']), 2),
-            "MA20": round(float(latest['SMA_20']), 2),
-            "MA50": round(float(latest['SMA_50']), 2),
-            "MA200": round(ma200_val, 2),
-            "RSI_14": round(float(latest['RSI_14']), 2),
-            "MACD": round(float(latest['MACD_12_26_9']), 2),
-            "MACD_Signal": round(float(latest['MACDs_12_26_9']), 2),
-            "BB_Upper": round(float(latest['BBU_20_2.0']), 2),
-            "BB_Lower": round(float(latest['BBL_20_2.0']), 2),
-            "Volume": int(latest['Volume']),
-            "Volume_SMA_20": int(latest['VOL_SMA_20']) if not pd.isna(latest['VOL_SMA_20']) else 0,
-            "MFI_14": round(float(latest['MFI_14']), 2),
+            "MA10": sma10,
+            "MA20": get_safe_value(latest, 'SMA_20'),
+            "MA50": sma50,
+            "MA200": get_safe_value(latest, 'SMA_200'),
+            "RSI_14": get_safe_value(latest, 'RSI_14'),
+            "MACD": get_safe_value(latest, 'MACD_'),
+            "MACD_Signal": get_safe_value(latest, 'MACDs_'),
+            "BB_Upper": get_safe_value(latest, 'BBU_'),
+            "BB_Lower": get_safe_value(latest, 'BBL_'),
+            "Volume": int(vol),
+            "Volume_SMA_20": int(vol_sma20),
+            "MFI_14": get_safe_value(latest, 'MFI_14'),
             "Support_3M": round(float(support), 2),
             "Resistance_3M": round(float(resistance), 2),
             "Market_Phase": phase
@@ -93,7 +97,7 @@ def get_technical_data(ticker):
         return None
 
 def generate_ai_report(data):
-    """Mengirim data ke Gemini API menggunakan SDK genai terbaru."""
+    """Mengirim data ke Gemini AI."""
     prompt = f"""
     Bertindaklah sebagai Senior Technical Analyst. Interpretasikan data teknikal berikut menjadi laporan narasi harian untuk trader profesional.
     
@@ -132,7 +136,7 @@ def generate_ai_report(data):
         return f"Maaf, gagal memproses analisis AI untuk {data['Ticker']}."
 
 def send_telegram_message(message):
-    """Mengirim laporan ke channel/chat Telegram via HTTP API."""
+    """Mengirim laporan ke Telegram."""
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
