@@ -1,81 +1,77 @@
 import yfinance as yf
 import pandas as pd
 import pandas_ta as ta
-import google.generativeai as genai
+from google import genai  # <-- Menggunakan SDK Baru
 import requests
 import os
 from datetime import datetime
 
 # ==========================================
-# KONFIGURASI API (Gunakan Environment Variables)
+# KONFIGURASI API
 # ==========================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-# Inisialisasi Gemini AI
-genai.configure(api_key=GEMINI_API_KEY)
-# Menggunakan Gemini 1.5 Flash/Pro untuk analitik teks yang cepat dan akurat
-model = genai.GenerativeModel('gemini-1.5-flash') 
+# Inisialisasi Gemini Client versi terbaru
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 def get_technical_data(ticker):
     """Mengambil data pasar dan menghitung indikator teknikal."""
-    # Ambil data 1 tahun untuk memastikan MA 200 dapat dikalkulasi
-    df = yf.download(ticker, period="1y", progress=False)
-    if df.empty:
-        return None
-
-    # Pastikan data index berupa datetime dan urut
-    df.sort_index(inplace=True)
-
-    # 1. Moving Averages
-    df.ta.sma(length=10, append=True)
-    df.ta.sma(length=20, append=True)
-    df.ta.sma(length=50, append=True)
-    df.ta.sma(length=200, append=True)
-
-    # 2. Momentum
-    df.ta.rsi(length=14, append=True)
-    df.ta.macd(fast=12, slow=26, signal=9, append=True)
-    df.ta.bbands(length=20, std=2, append=True)
-
-    # 3. Volume & MFI
-    # Pandas_ta membutuhkan format nama kolom yang spesifik untuk Volume
-    df['VOL_SMA_20'] = df['Volume'].rolling(window=20).mean()
-    df.ta.mfi(length=14, append=True)
-
-    # 4. Support & Resistance (High/Low 3 Bulan Terakhir / ~60 Hari Trading)
-    last_3_months = df.tail(60)
-    resistance = last_3_months['High'].max()
-    support = last_3_months['Low'].min()
-
-    # Ambil baris data terakhir (Hari Perdagangan Terakhir)
-    latest = df.iloc[-1]
-
-    # 5. Deteksi Fase Market Sederhana
-    phase = "Sideways / Konsolidasi 🟡"
-    if latest['SMA_10'] > latest['SMA_50'] and latest['Volume'] > latest['VOL_SMA_20']:
-        phase = "Akumulasi / Markup (Bullish) 🟢"
-    elif latest['SMA_10'] < latest['SMA_50'] and latest['Volume'] > latest['VOL_SMA_20']:
-        phase = "Distribusi / Markdown (Bearish) 🔴"
-
-    # Kompilasi data untuk diumpankan ke AI
-    # Menghindari error NaN jika data kurang
     try:
+        # Perbaikan Error: Menggunakan Ticker().history() menghindari masalah MultiIndex yfinance
+        stock = yf.Ticker(ticker)
+        df = stock.history(period="1y")
+        
+        if df.empty:
+            return None
+
+        # 1. Moving Averages
+        df.ta.sma(length=10, append=True)
+        df.ta.sma(length=20, append=True)
+        df.ta.sma(length=50, append=True)
+        df.ta.sma(length=200, append=True)
+
+        # 2. Momentum
+        df.ta.rsi(length=14, append=True)
+        df.ta.macd(fast=12, slow=26, signal=9, append=True)
+        df.ta.bbands(length=20, std=2, append=True)
+
+        # 3. Volume & MFI
+        df['VOL_SMA_20'] = df['Volume'].rolling(window=20).mean()
+        df.ta.mfi(length=14, append=True)
+
+        # 4. Support & Resistance (High/Low 3 Bulan Terakhir)
+        last_3_months = df.tail(60)
+        resistance = last_3_months['High'].max()
+        support = last_3_months['Low'].min()
+
+        latest = df.iloc[-1]
+
+        # 5. Deteksi Fase Market Sederhana
+        phase = "Sideways / Konsolidasi 🟡"
+        if latest['SMA_10'] > latest['SMA_50'] and latest['Volume'] > latest['VOL_SMA_20']:
+            phase = "Akumulasi / Markup (Bullish) 🟢"
+        elif latest['SMA_10'] < latest['SMA_50'] and latest['Volume'] > latest['VOL_SMA_20']:
+            phase = "Distribusi / Markdown (Bearish) 🔴"
+
+        # Proteksi error NaN jika data terlalu baru (belum 200 hari)
+        ma200_val = 0 if pd.isna(latest['SMA_200']) else float(latest['SMA_200'])
+
         data_summary = {
             "Ticker": ticker,
             "Close Price": round(float(latest['Close']), 2),
             "MA10": round(float(latest['SMA_10']), 2),
             "MA20": round(float(latest['SMA_20']), 2),
             "MA50": round(float(latest['SMA_50']), 2),
-            "MA200": round(float(latest['SMA_200']), 2),
+            "MA200": round(ma200_val, 2),
             "RSI_14": round(float(latest['RSI_14']), 2),
             "MACD": round(float(latest['MACD_12_26_9']), 2),
             "MACD_Signal": round(float(latest['MACDs_12_26_9']), 2),
             "BB_Upper": round(float(latest['BBU_20_2.0']), 2),
             "BB_Lower": round(float(latest['BBL_20_2.0']), 2),
             "Volume": int(latest['Volume']),
-            "Volume_SMA_20": int(latest['VOL_SMA_20']),
+            "Volume_SMA_20": int(latest['VOL_SMA_20']) if not pd.isna(latest['VOL_SMA_20']) else 0,
             "MFI_14": round(float(latest['MFI_14']), 2),
             "Support_3M": round(float(support), 2),
             "Resistance_3M": round(float(resistance), 2),
@@ -87,7 +83,7 @@ def get_technical_data(ticker):
         return None
 
 def generate_ai_report(data):
-    """Mengirim data ke Gemini API untuk diinterpretasikan."""
+    """Mengirim data ke Gemini API menggunakan SDK genai terbaru."""
     prompt = f"""
     Bertindaklah sebagai Senior Technical Analyst. Interpretasikan data teknikal berikut menjadi laporan narasi harian untuk trader profesional.
     
@@ -115,8 +111,16 @@ def generate_ai_report(data):
     *Disclaimer: Keputusan investasi berada di tangan Anda. Do Your Own Research (DYOR).* 🛡️
     """
     
-    response = model.generate_content(prompt)
-    return response.text
+    try:
+        # Format pemanggilan API GenAI versi terbaru
+        response = client.models.generate_content(
+            model='gemini-1.5-flash',
+            contents=prompt,
+        )
+        return response.text
+    except Exception as e:
+        print(f"Gagal memanggil API Gemini: {e}")
+        return f"Maaf, gagal memproses analisis AI untuk {data['Ticker']}."
 
 def send_telegram_message(message):
     """Mengirim laporan ke channel/chat Telegram via HTTP API."""
@@ -139,8 +143,7 @@ def main():
         return
 
     with open(file_path, "r") as f:
-        # Membaca ticker saham, mengabaikan baris kosong, dan menambahkan '.JK' jika untuk saham Indonesia (IHSG)
-        # Hapus + ".JK" jika memantau saham US seperti AAPL, TSLA
+        # Membaca ticker saham
         tickers = [line.strip().upper() + ".JK" for line in f if line.strip()]
 
     for ticker in tickers:
