@@ -1,39 +1,41 @@
-# 📈 Gemini IDX Technical Analyst
+# 📈 Gemini IDX Technical Analyst (Hybrid Engine)
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python)
-![Gemini AI](https://img.shields.io/badge/Google%20Gemini-AI-orange?style=for-the-badge&logo=google)
+![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python)
+![Pandas TA](https://img.shields.io/badge/Pandas_TA-Technical_Engine-success?style=for-the-badge)
+![Gemini AI](https://img.shields.io/badge/Google%20Gemini-Primary_AI-orange?style=for-the-badge&logo=google)
+![OpenRouter](https://img.shields.io/badge/Llama_3.3-Fallback_AI-black?style=for-the-badge&logo=meta)
 ![Telegram API](https://img.shields.io/badge/Telegram-Bot-informational?style=for-the-badge&logo=telegram)
-![GitHub Actions](https://img.shields.io/badge/Automated-Cron%20Job-success?style=for-the-badge&logo=github-actions)
 
-**Gemini IDX Technical Analyst** adalah bot analitik otomatis yang mengintegrasikan data pasar saham Indonesia (IHSG), kalkulasi indikator teknikal tingkat lanjut, dan kecerdasan buatan (LLM). Repositori ini bertindak sebagai *Senior Technical Analyst* virtual yang memberikan laporan harian komprehensif langsung ke Telegram Anda.
+**Gemini IDX Technical Analyst** adalah bot analitik otomatis yang mengintegrasikan data pasar saham Indonesia (IHSG) dengan perhitungan indikator teknikal tingkat lanjut.
+
+Versi terbaru ini menggunakan arsitektur **Hybrid Deterministic**, di mana **Python Rule-Based Engine** memegang kendali 100% atas logika *trading*, sementara AI (Gemini & Llama 3.3) bertindak sebagai asisten pemberi opini tambahan (*Insight*). Arsitektur ini menjamin *Uptime 100%* meskipun server AI sedang mengalami *down* atau *rate limit*.
 
 ---
 
-## 🏛️ Arsitektur Sistem
+## 🏛️ Arsitektur Sistem (Fault-Tolerant)
 
-Sistem ini dibangun dengan pendekatan modular, memisahkan ekstraksi data, pemrosesan logika, dan interpretasi AI:
+Sistem ini dirancang anti-gagal dengan alur kerja berikut:
 
-1. **Data Ingestion:** `yfinance` mengambil data harga historis saham (OHLCV).
-2. **Technical Engine:** `pandas_ta` menghitung indikator kunci (Moving Averages, RSI, MACD, Bollinger Bands, MFI) dan mengidentifikasi Support/Resistance.
-3. **AI Interpretation:** Google Gemini AI (1.5 Flash) memproses data kuantitatif menjadi narasi kualitatif dan strategi *trading* (BoW, Breakout, dll).
-4. **Delivery & Automation:** Laporan dikirim ke Telegram menggunakan format Markdown, dijalankan secara otonom setiap hari pukul 08:00 WIB via **GitHub Actions**.
+1. **Data Ingestion (Bulletproof):** `yfinance` mengambil data (OHLCV). Sistem secara otomatis menangani *MultiIndex handling* dan *auto-append* `.JK`.
+2. **Deterministic Engine:** `pandas_ta` dan Python mengkalkulasi MA, RSI, MACD, Volume, MFI, serta merumuskan Strategi Entry & Cut Loss. **(Tingkat keberhasilan 100%)**
+3. **AI Insight (Auto-Failover):**
+   - Sistem akan meminta 1 paragraf opini psikologis market dari **Gemini 2.0 Flash**.
+   - Jika Gemini terkena limit, sistem otomatis beralih (*failover*) ke **OpenRouter (Meta Llama 3.3 70B)**.
+   - Jika seluruh AI mati, bot mengabaikannya dan tetap mengirim laporan teknikal ke Telegram.
+4. **Delivery:** Dieksekusi otomatis via **GitHub Actions** (*Cron Job*) setiap hari pukul 08:00 WIB.
 
 ---
 
 ## 📋 Prasyarat (*Prerequisites*)
 
-Sebelum memulai implementasi, pastikan Anda telah memiliki:
-
-- Akun **Google AI Studio** untuk mendapatkan `GEMINI_API_KEY`.
-- Akun Telegram dan telah membuat bot melalui **@BotFather** untuk mendapatkan `TELEGRAM_BOT_TOKEN`.
+- Akun **Google AI Studio** untuk `GEMINI_API_KEY`.
+- Akun **OpenRouter** (Gratis) untuk `OPENROUTER_API_KEY`.
+- Akun Telegram dan Token Bot dari **@BotFather** (`TELEGRAM_BOT_TOKEN`).
 - ID Chat/Channel Telegram Anda (`TELEGRAM_CHAT_ID`).
-- Repositori GitHub untuk menjalankan *workflow* otomatis.
 
 ---
 
 ## 🚀 Panduan Instalasi (Lokal)
-
-Jika Anda ingin menguji coba skrip ini di environment lokal Anda sebelum mengunggahnya ke GitHub Actions, ikuti langkah berikut:
 
 ### 1. Kloning Repositori
 
@@ -42,42 +44,39 @@ git clone https://github.com/USERNAME_ANDA/gemini-idx-technical-analyst.git
 cd gemini-idx-technical-analyst
 ```
 
-### 2. Konfigurasi Virtual Environment (Opsional namun disarankan)
+### 2. Konfigurasi Virtual Environment & Instalasi
 
 ```bash
 python -m venv venv
 source venv/bin/activate  # Untuk Linux/Mac
 venv\Scripts\activate     # Untuk Windows
-```
 
-### 3. Instalasi Dependensi
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. Konfigurasi Environment Variables
+### 3. Konfigurasi Environment Variables
 
-Buat file `.env` di root direktori (pastikan file ini masuk ke `.gitignore`) dan masukkan kredensial Anda:
+Buat file `.env` di root direktori:
 
 ```env
 GEMINI_API_KEY="AIzaSyYourGeminiKeyHere..."
+OPENROUTER_API_KEY="sk-or-v1-YourOpenRouterKeyHere..."
 TELEGRAM_BOT_TOKEN="123456789:ABCdefGhIjkL..."
 TELEGRAM_CHAT_ID="-100123456789"
 ```
 
-### 5. Atur Daftar Saham
+### 4. Atur Daftar Saham
 
-Buka file `saham_pantauan.txt` dan masukkan kode emiten yang ingin dianalisis (satu kode per baris). Sistem otomatis menambahkan `.JK` di backend.
+Buka file `saham_pantauan.txt` dan masukkan kode emiten. Sistem otomatis menambahkan `.JK` jika Anda lupa.
 
 ```text
 BBCA
 BBRI
 TLKM
-AMMN
+BUMI
 ```
 
-### 6. Eksekusi Skrip
+### 5. Eksekusi Skrip
 
 ```bash
 python bot_saham.py
@@ -87,25 +86,17 @@ python bot_saham.py
 
 ## ⚙️ Konfigurasi Otomasi (GitHub Actions)
 
-Repositori ini sudah dilengkapi dengan file `.github/workflows/daily_report.yml` agar skrip berjalan otomatis setiap hari kerja pukul 08:00 WIB.
+Untuk menjalankan script ini otomatis setiap hari kerja pukul 08:00 WIB, daftarkan secrets berikut di repositori GitHub Anda melalui **Settings > Secrets and variables > Actions**:
 
-Untuk mengaktifkannya:
+- `GEMINI_API_KEY`
+- `OPENROUTER_API_KEY`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-1. Masuk ke halaman repositori GitHub Anda.
-2. Navigasi ke **Settings > Secrets and variables > Actions**.
-3. Klik **New repository secret** dan tambahkan 3 secrets berikut sesuai dengan kredensial Anda:
-   - `GEMINI_API_KEY`
-   - `TELEGRAM_BOT_TOKEN`
-   - `TELEGRAM_CHAT_ID`
-
-GitHub Actions akan otomatis mengambil data dari `saham_pantauan.txt` dan mengirimkan laporan setiap pagi.
+GitHub Actions akan menggunakan file `.github/workflows/daily_report.yml` untuk memicu analisis otomatis.
 
 ---
 
 ## 🛡️ Disclaimer
 
-Skrip dan repositori ini dibuat murni untuk tujuan edukasi, penelitian, dan penyediaan informasi kuantitatif. Segala bentuk keputusan investasi atau trading yang didasarkan pada output sistem ini sepenuhnya menjadi tanggung jawab pengguna. Do Your Own Research (DYOR).
-
----
-
-Developed with clean code and structured analytics.
+Skrip ini dibuat murni untuk tujuan edukasi dan penyediaan informasi kuantitatif. Logika *rule-based* dan opini AI yang dihasilkan bukanlah rekomendasi mutlak. Segala bentuk keputusan investasi atau *trading* sepenuhnya menjadi tanggung jawab pengguna. **Do Your Own Research (DYOR).**
