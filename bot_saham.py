@@ -100,7 +100,7 @@ def generate_with_openrouter(prompt):
         "Content-Type": "application/json"
     }
     data = {
-        "model": "meta-llama/llama-3.1-8b-instruct:free",
+        "model": "meta-llama/llama-3.3-70b-instruct:free",
         "messages": [
             {"role": "user", "content": prompt}
         ]
