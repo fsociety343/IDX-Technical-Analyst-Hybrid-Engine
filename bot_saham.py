@@ -8,10 +8,10 @@ from datetime import datetime
 import time
 
 # ==========================================
-# KONFIGURASI API
+# KONFIGURASI API (Environment Variables)
 # ==========================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") # Konfigurasi Backup AI
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -40,7 +40,7 @@ def get_technical_data(ticker):
             df.columns = df.columns.get_level_values(0)
         df.columns = [str(col) for col in df.columns]
 
-        # Kalkulasi
+        # Kalkulasi Indikator
         df.ta.sma(length=10, append=True)
         df.ta.sma(length=20, append=True)
         df.ta.sma(length=50, append=True)
@@ -93,14 +93,14 @@ def get_technical_data(ticker):
         return None
 
 def generate_with_openrouter(prompt):
-    """Fungsi spesifik untuk memanggil API OpenRouter (Model Meta Llama 3 Free)."""
+    """Fungsi spesifik untuk memanggil API OpenRouter (Model Llama 3.1 Free)."""
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json"
     }
     data = {
-        "model": "meta-llama/llama-3-8b-instruct:free", # Menggunakan model gratis yang stabil
+        "model": "meta-llama/llama-3.1-8b-instruct:free",
         "messages": [
             {"role": "user", "content": prompt}
         ]
@@ -131,9 +131,9 @@ def generate_ai_report(data):
     3. Momentum (Interpretasi RSI, MACD, dan Bollinger Bands)
     4. Volume (Bandingkan volume hari ini dengan rata-rata 20 hari)
     5. MFI (Money Flow Index - apakah ada indikasi smart money masuk/keluar)
-    6. Support & Resistance (Sebutkan angka pastinya)
+    6. Support & Resistance (Sebutkan angka pastinya: Support {data['Support_3M']} dan Resistance {data['Resistance_3M']})
     7. Skenario Harga (Potensi pergerakan 1-3 hari ke depan)
-    8. Strategi Entry (Berikan rekomendasi praktis)
+    8. Strategi Entry (Berikan rekomendasi praktis: BoW, Breakout, atau Agresif)
     9. Manajemen Risiko (Di mana level Cut Loss ideal)
     10. Kesimpulan (Ringkasan eksekutif 1 kalimat)
 
@@ -147,7 +147,6 @@ def generate_ai_report(data):
             model='gemini-2.0-flash',
             contents=prompt,
         )
-        # Menambahkan tag [Gemini AI] di awal agar Anda tahu AI mana yang merespons
         return f"💡 **[Report by Gemini AI]**\n\n{response.text}"
         
     except Exception as e:
@@ -159,13 +158,13 @@ def generate_ai_report(data):
             
         try:
             backup_response = generate_with_openrouter(prompt)
-            # Menambahkan tag [OpenRouter Llama] agar Anda tahu ini adalah respons backup
-            return f"💡 **[Report by OpenRouter Llama]**\n\n{backup_response}"
+            return f"💡 **[Report by OpenRouter Llama 3.1]**\n\n{backup_response}"
         except Exception as ex:
             print(f"❌ OpenRouter juga gagal: {ex}")
             return f"Maaf, seluruh sistem AI sedang down saat memproses {data['Ticker']}."
 
 def send_telegram_message(message):
+    """Mengirim pesan laporan ke Telegram."""
     if not message: return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
@@ -175,7 +174,9 @@ def main():
     print(f"--- Memulai Rutinitas Analisis: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---")
     file_path = "saham_pantauan.txt"
     
-    if not os.path.exists(file_path): return
+    if not os.path.exists(file_path): 
+        print(f"File {file_path} tidak ditemukan.")
+        return
 
     with open(file_path, "r") as f:
         raw_tickers = [line.strip().upper() for line in f if line.strip()]
@@ -192,8 +193,11 @@ def main():
         else:
             print(f"❌ Gagal mendapatkan data untuk {ticker}")
 
-        # Tetap berikan jeda 15 detik sebagai tata krama API server
-        time.sleep(15)
+        # Jeda 30 detik untuk menghindari limit harian / Token Per Minute
+        print("Menunggu 30 detik sebelum lanjut...")
+        time.sleep(30)
+
+    print("--- Semua tugas selesai ---")
 
 if __name__ == "__main__":
     main()
