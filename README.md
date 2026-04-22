@@ -1,4 +1,4 @@
-# 📈 IDX Technical Analyst Hybrid Engine PRO
+# 📈 IDX Technical Analyst Hybrid Engine PRO v2
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python)
 ![Pandas TA](https://img.shields.io/badge/Pandas_TA-Technical_Engine-success?style=for-the-badge)
@@ -7,17 +7,20 @@
 ![Telegram API](https://img.shields.io/badge/Telegram-Bot-informational?style=for-the-badge&logo=telegram)
 ![Yahoo Finance](https://img.shields.io/badge/YFinance-Market_Data-4CAF50?style=for-the-badge)
 
-**IDX Technical Analyst Hybrid Engine PRO** adalah bot analitik otomatis untuk saham Indonesia yang menggabungkan **data pasar Yahoo Finance**, **engine teknikal rule-based Python**, **screener saham syariah live**, **Telegram Bot**, dan **AI insight opsional**.
+**IDX Technical Analyst Hybrid Engine PRO v2** adalah bot analitik otomatis untuk saham Indonesia yang menggabungkan **data pasar Yahoo Finance**, **engine teknikal rule-based Python**, **screener saham syariah live**, **Telegram Bot**, dan **AI insight opsional**.
 
-Versi PRO ini menambahkan:
-- **Decision Engine** yang lebih tegas
+Versi **PRO v2** menambahkan:
+- **Decision Engine** yang lebih disiplin
 - **Dynamic entry trigger**
 - **Dua skenario trading**: pullback & breakout
-- **Smart stop loss** dengan batas maksimum 5%
+- **Breakout buffer** untuk mengurangi fake breakout
+- **Pullback expiry** agar setup tidak menggantung terlalu lama
+- **Market filter IHSG**
+- **Smart stop loss**: tactical & structural stop
 - **Position sizing**
-- **Setup grade** dan status `ENTRY READY / WAIT FOR TRIGGER / SKIP`
+- **Trade management** setelah entry
 
-Dengan pendekatan ini, bot tidak hanya memberi level statis, tetapi juga memberi konteks eksekusi dan manajemen risiko yang lebih realistis.
+Dengan pendekatan ini, bot tidak hanya memberi level statis, tetapi juga memberi konteks eksekusi, manajemen risiko, dan disiplin market filter yang lebih realistis.
 
 ---
 
@@ -35,7 +38,7 @@ Dengan pendekatan ini, bot tidak hanya memberi level statis, tetapi juga memberi
    - Ticker IDX otomatis dinormalisasi ke `.JK`
    - Mendukung batch screening
 
-3. **Technical Engine PRO**
+3. **Technical Engine PRO v2**
    - Hitung indikator teknikal:
      - SMA 10 / 20 / 50 / 200
      - RSI
@@ -50,8 +53,11 @@ Dengan pendekatan ini, bot tidak hanya memberi level statis, tetapi juga memberi
      - support/resistance
      - pullback trigger
      - breakout trigger
+     - breakout buffer
+     - tactical vs structural stop
      - risk-reward
      - position sizing
+     - trade management
 
 4. **Decision Engine**
    - Menentukan status:
@@ -64,12 +70,17 @@ Dengan pendekatan ini, bot tidak hanya memberi level statis, tetapi juga memberi
      - `C`
      - `Avoid`
 
-5. **Telegram Delivery**
+5. **Market Filter**
+   - Memeriksa kondisi **IHSG / `^JKSE`**
+   - Setup hanya ditingkatkan menjadi `ENTRY READY` jika market mendukung
+   - Jika market lemah, setup akan ditahan di `WAIT FOR TRIGGER` atau `SKIP`
+
+6. **Telegram Delivery**
    - Kirim hasil screener
    - Kirim analisa teknikal lengkap
    - Kirim alert error
 
-6. **AI Insight Opsional**
+7. **AI Insight Opsional**
    - Gemini
    - OpenRouter
 
@@ -86,9 +97,10 @@ Kriteria utama:
 - RSI minimum sesuai threshold
 - MACD bullish
 - Nilai transaksi minimum
+- Market filter IHSG mendukung
 
 ### 2. Dynamic Entry Trigger
-Bot tidak lagi hanya menulis “entry di level X”, tetapi memisahkan:
+Bot memisahkan:
 - **Pullback Entry**
 - **Breakout Entry**
 
@@ -98,26 +110,37 @@ Dengan trigger seperti:
 - volume naik
 - breakout + volume spike
 
-### 3. Smart Stop Loss
-SL dibatasi agar tetap realistis:
-- berdasarkan struktur teknikal
-- dibatasi **maksimum 5%** dari entry
+### 3. Breakout Buffer
+Breakout entry tidak lagi tepat di resistance.  
+Bot menambahkan:
+- buffer persentase
+- buffer absolut
 
-### 4. Position Sizing
+Tujuannya mengurangi fake breakout.
+
+### 4. Pullback Expiry
+Setup pullback memiliki masa berlaku:
+- default `3–5 hari bursa`
+- bila tidak tersentuh / tidak terkonfirmasi, setup dianggap expired secara operasional
+
+### 5. Smart Stop Loss
+Bot menampilkan:
+- **Tactical SL** → lebih efisien untuk RR
+- **Structural SL** → lebih longgar, berbasis struktur support
+
+### 6. Position Sizing
 Bot menghitung:
 - modal
 - risk per trade
 - risk nominal
-- maksimum posisi
+- maksimum nilai posisi
 - estimasi lot
 
-### 5. Decision Engine
-Output utama:
-- Trend
-- Kondisi
-- RR Status
-- Action
-- Grade
+### 7. Trade Management
+Setelah entry:
+- jika harga naik **+5%**, SL digeser ke **BEP**
+- jika harga mencapai **TP1**, ambil **partial profit 50%**
+- sisa posisi diarahkan ke **TP2**
 
 ---
 
@@ -190,7 +213,7 @@ google-genai
 
 Buat file `.env` berdasarkan `.env.example`.
 
-Contoh penting:
+Variabel penting:
 
 ```env
 RUN_MODE=screener_syariah
@@ -199,14 +222,24 @@ MIN_ACCEPTABLE_RR=1.2
 ACCOUNT_SIZE=3000000
 RISK_PER_TRADE_PCT=1
 MAX_STOP_PCT=5
+
+BREAKOUT_BUFFER_PCT=1
+BREAKOUT_BUFFER_ABS=1
+PULLBACK_EXPIRY_DAYS=5
+USE_MARKET_FILTER=1
+MARKET_SYMBOL=^JKSE
+MOVE_SL_TO_BEP_AT_PCT=5
+PARTIAL_TAKE_PROFIT_AT_TP1_PCT=50
 ```
 
 Keterangan:
-- `SCREENER_MAX_PRICE`: filter harga maksimum saham
-- `MIN_ACCEPTABLE_RR`: RR minimum agar setup layak
-- `ACCOUNT_SIZE`: modal akun
-- `RISK_PER_TRADE_PCT`: risk per trade dalam persen
-- `MAX_STOP_PCT`: batas maksimum SL dari entry
+- `BREAKOUT_BUFFER_PCT`: buffer persentase breakout
+- `BREAKOUT_BUFFER_ABS`: buffer absolut breakout
+- `PULLBACK_EXPIRY_DAYS`: masa berlaku setup pullback
+- `USE_MARKET_FILTER`: aktifkan filter IHSG
+- `MARKET_SYMBOL`: simbol index market, default `^JKSE`
+- `MOVE_SL_TO_BEP_AT_PCT`: kapan SL digeser ke BEP
+- `PARTIAL_TAKE_PROFIT_AT_TP1_PCT`: persentase partial profit di TP1
 
 ---
 
@@ -241,28 +274,39 @@ python bot_saham.py
 
 1. Decision Engine
 • Trend      : Bullish continuation / breakout confirmation
-• Kondisi    : Overextended / breakout kuat
+• Kondisi    : Bullish sehat
+• Market     : Uptrend / mendukung
 • RR Status  : Sehat
 • Action     : WAIT FOR TRIGGER
-• Grade      : C
+• Grade      : B
 
 4. Skenario Pullback Entry
-• Area       : 134
-• Trigger    : Bullish candle + rebound + volume naik
-• Status     : WAIT
-• Entry      : 134
-• SL         : 128
-• TP         : 149 | 153
-• RR         : 2.4
+• Area         : 134
+• Trigger      : Bullish candle + rebound + volume naik
+• Status       : WAIT
+• Entry        : 134
+• Tactical SL  : 130
+• Structural SL: 128
+• TP           : 149 | 153
+• RR Tactical  : 3.0
+• RR Structural: 2.2
+• Expiry       : 5 hari bursa
 
 5. Skenario Breakout Entry
-• Area       : >145
-• Trigger    : Breakout + volume spike
-• Status     : VALID
-• Entry      : 146
-• SL         : 139
-• TP         : 153 | 158
-• RR         : 1.71
+• Area         : >145
+• Trigger      : Close breakout + volume spike + buffer 1.00%
+• Status       : VALID
+• Entry        : 146
+• Tactical SL  : 139
+• Structural SL: 138
+• TP           : 153 | 158
+• RR Tactical  : 1.75
+• RR Structural: 1.45
+
+7. Trade Management
+• Jika harga naik 5.00%, geser SL ke BEP.
+• Jika TP1 tercapai, ambil partial profit 50%.
+• Sisa posisi diarahkan ke TP2.
 ```
 
 ---
@@ -279,7 +323,10 @@ Workflow final sudah disesuaikan untuk:
 - harga `< 100`
 - risk-reward minimum
 - position sizing
-- smart stop loss
+- breakout buffer
+- pullback expiry
+- market filter IHSG
+- trade management
 - debug runtime config
 
 ---
