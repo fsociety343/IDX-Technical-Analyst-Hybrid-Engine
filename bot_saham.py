@@ -1,7 +1,6 @@
 import os
 import re
 import time
-import math
 from pathlib import Path
 from datetime import datetime
 
@@ -44,23 +43,21 @@ DES_PDF_URL = os.environ.get(
 SCREENER_LIMIT = int(os.environ.get("SCREENER_LIMIT", "5"))
 SCREENER_PERIOD = os.environ.get("SCREENER_PERIOD", "6mo")
 SCREENER_INTERVAL = os.environ.get("SCREENER_INTERVAL", "1d")
-SCREENER_MAX_PRICE = float(os.environ.get("SCREENER_MAX_PRICE", "500"))
+SCREENER_MAX_PRICE = float(os.environ.get("SCREENER_MAX_PRICE", "100"))
 SCREENER_MIN_VOLUME_RATIO = float(os.environ.get("SCREENER_MIN_VOLUME_RATIO", "1.5"))
 SCREENER_MIN_VALUE_TRADED = float(os.environ.get("SCREENER_MIN_VALUE_TRADED", "1000000000"))
 SCREENER_MIN_RSI = float(os.environ.get("SCREENER_MIN_RSI", "55"))
 SCREENER_BATCH_SIZE = int(os.environ.get("SCREENER_BATCH_SIZE", "40"))
 SCREENER_DELAY_SECONDS = float(os.environ.get("SCREENER_DELAY_SECONDS", "1.0"))
 SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE = os.environ.get("SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE", "1").strip() == "1"
+MIN_ACCEPTABLE_RR = float(os.environ.get("MIN_ACCEPTABLE_RR", "1.2"))
 
-# tambahan / pengecualian universe
 INCIDENTAL_ADDITIONS = [x.strip().upper() for x in os.environ.get("INCIDENTAL_ADDITIONS", "BSAI").split(",") if x.strip()]
 EXCLUDED_CODES = {x.strip().upper() for x in os.environ.get("EXCLUDED_CODES", "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE").split(",") if x.strip()}
 
-# toggle report
 ENABLE_AI_INSIGHT = os.environ.get("ENABLE_AI_INSIGHT", "0").strip() == "1"
 TELEGRAM_PREFIX = os.environ.get("TELEGRAM_PREFIX", "").strip()
 
-# client AI
 GEMINI_CLIENT = None
 if genai is not None and GEMINI_API_KEY:
     try:
@@ -89,7 +86,6 @@ def denormalize_ticker(code: str) -> str:
 
 
 def get_safe_value(row, prefix):
-    """Ambil indikator berdasarkan prefix nama kolom."""
     for col in row.index:
         if str(col).startswith(prefix):
             val = row[col]
@@ -173,7 +169,6 @@ def send_to_telegram(message: str):
 
 
 def unique_sorted_levels(levels, reverse=False, min_gap_ratio=0.02):
-    """Rapikan level support/resistance agar tidak terlalu berdekatan."""
     clean = []
     for x in levels:
         try:
@@ -219,6 +214,38 @@ def write_lines_file(path: str, items, header=None):
             f.write(f"{item}\n")
 
 
+def calc_rr(entry, stop, target):
+    risk = entry - stop
+    reward = target - entry
+    if risk <= 0 or reward <= 0:
+        return 0.0
+    return round(reward / risk, 2)
+
+
+def rr_quality_label(rr_value):
+    if rr_value >= 2:
+        return "Sangat sehat"
+    if rr_value >= 1.5:
+        return "Sehat"
+    if rr_value >= 1:
+        return "Sedang"
+    return "Kurang menarik"
+
+
+def get_setup_grade(trend_bias, breakout_valid, volume, vol_sma20, rr2):
+    if breakout_valid and volume > vol_sma20 * 1.5 and rr2 >= 2:
+        return "A"
+    if trend_bias.startswith("Bullish") and rr2 >= 1.5:
+        return "B"
+    if rr2 >= 1:
+        return "C"
+    return "Avoid"
+
+
+def should_avoid_trade(setup_grade, rr2):
+    return setup_grade == "Avoid" or rr2 < MIN_ACCEPTABLE_RR
+
+
 # =========================================================
 # UNIVERSE SAHAM SYARIAH (AUTO UPDATE OJK PDF)
 # =========================================================
@@ -242,27 +269,16 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 
 
 def extract_stock_codes_from_des_text(text: str):
-    """
-    Ambil ticker dari pola tabel OJK, contoh:
-    8 AADI PT Adaro Andalan Indonesia Tbk
-    639 TLKM PT Telkom Indonesia (Persero) Tbk
-    """
     codes = set()
-
     for raw_line in text.splitlines():
         line = " ".join(raw_line.strip().split())
         m = re.match(r"^\d+\s+([A-Z]{4,5})\s+PT\b", line)
         if m:
             codes.add(m.group(1))
-
     return sorted(codes)
 
 
 def update_syariah_universe(force_download=False):
-    """
-    Update universe saham syariah dari PDF OJK.
-    Jika download gagal, pakai file lama yang sudah ada.
-    """
     master_path = str(Path(SYARIAH_MASTER_FILE))
     screener_path = str(Path(SYARIAH_UNIVERSE_FILE))
     pdf_path = str(Path(DES_PDF_LOCAL))
@@ -286,7 +302,6 @@ def update_syariah_universe(force_download=False):
             log(f"Gagal ekstrak PDF DES: {e}")
 
     if not extracted_codes:
-        # fallback ke master file lama kalau ada
         old_master = [x.strip().upper() for x in read_lines_file(master_path)]
         if old_master:
             extracted_codes = old_master
@@ -356,7 +371,6 @@ def load_watchlist():
 # TEKNIKAL
 # =========================================================
 def get_price_structure(df):
-    """Deteksi struktur harga sederhana."""
     if len(df) < 12:
         return "Struktur belum cukup", "Netral"
 
@@ -390,26 +404,24 @@ def detect_market_phase(data):
     vol_sma20 = data["Volume_SMA_20"]
     rsi = data["RSI_14"]
 
-    if close > ma10 > ma20 > ma50 > ma200:
-        return "Markup"
-    elif close > ma10 > ma20 > ma50 and vol > vol_sma20:
-        return "Akumulasi → Markup"
-    elif close < ma10 < ma20 < ma50 < ma200:
+    bullish_stack = close > ma10 > ma20 > ma50
+    bearish_stack = close < ma10 < ma20 < ma50
+
+    if bullish_stack and vol > vol_sma20 and rsi >= 60:
+        return "Markup / Bullish Continuation"
+    elif close > ma20 and ma20 > ma50 and rsi >= 55:
+        return "Early Markup"
+    elif bearish_stack and rsi < 45:
         return "Markdown"
-    elif ma10 < ma50 and close > ma10 and vol > vol_sma20 and rsi > 50:
-        return "Akumulasi"
+    elif close > ma20 and vol < vol_sma20:
+        return "Konsolidasi dalam uptrend"
+    elif close < ma20 and vol < vol_sma20:
+        return "Sideways / distribusi ringan"
     else:
-        return "Sideways / Konsolidasi"
+        return "Transisi"
 
 
 def get_support_resistance_levels(df, close_price):
-    """
-    Ambil 3 support dan 3 resistance dari:
-    - Pivot
-    - Swing 3 bulan
-    - SMA20 / SMA50 / SMA200
-    - Bollinger band
-    """
     last = df.iloc[-1]
     prev = df.iloc[-2] if len(df) >= 2 else df.iloc[-1]
     last_63 = df.tail(63)
@@ -465,7 +477,6 @@ def get_support_resistance_levels(df, close_price):
 
 
 def get_technical_data(ticker):
-    """Ambil data pasar dan hitung indikator teknikal."""
     try:
         stock = yf.Ticker(ticker)
         df = stock.history(period="1y", interval="1d", auto_adjust=False)
@@ -562,9 +573,9 @@ def get_technical_data(ticker):
 
 
 # =========================================================
-# REPORT RULE-BASED
+# REPORT RULE-BASED (REVISI PENUH)
 # =========================================================
-def generate_python_logic_report(data):
+def generate_python_logic_report(data, return_meta=False):
     close = data["Close Price"]
     ma10 = data["MA10"]
     ma20 = data["MA20"]
@@ -588,109 +599,190 @@ def generate_python_logic_report(data):
     r2 = data["resistance_2"]
     r3 = data["resistance_3"]
 
-    # 1. Tren utama
-    if close > ma20 > ma50 > ma200 and data["Structure_Flag"] == "bullish":
+    breakout_valid = data["Breakout_Valid"]
+    structure_flag = data["Structure_Flag"]
+    phase_text = data["Market_Phase"]
+
+    bullish_ma_alignment = close > ma20 > ma50
+    strong_bullish_ma = close > ma10 > ma20 > ma50
+    bullish_macd = macd > macd_signal
+    bullish_volume = volume > vol_sma20
+    bullish_rsi = rsi >= 60
+
+    if breakout_valid and bullish_ma_alignment and bullish_macd and bullish_volume:
+        trend_condition = "Bullish continuation / breakout confirmation"
+        trend_bias = "Bullish kuat"
+    elif strong_bullish_ma and bullish_macd and bullish_rsi:
         trend_condition = "Uptrend kuat"
         trend_bias = "Bullish kuat"
-    elif ma50 < ma200 and close > ma20 and data["Structure_Flag"] in ["bullish", "reversal"]:
-        trend_condition = "Downtrend → reversal kuat"
-        trend_bias = "Bullish kuat"
-    elif close < ma20 < ma50 < ma200 and data["Structure_Flag"] == "bearish":
+    elif bullish_ma_alignment and structure_flag in ["bullish", "reversal"]:
+        trend_condition = "Early uptrend / transisi bullish"
+        trend_bias = "Bullish moderat"
+    elif close < ma20 < ma50 and structure_flag == "bearish":
         trend_condition = "Downtrend"
         trend_bias = "Bearish kuat"
     else:
         trend_condition = "Sideways / transisi"
         trend_bias = "Netral"
 
-    breakout_note = "Terjadi breakout signifikan dari area konsolidasi" if data["Breakout_Valid"] else "Belum ada breakout signifikan"
-    phase_text = data["Market_Phase"]
-
-    # 2. MA
     if close > ma10 and close > ma20 and close > ma50:
-        ma_position = "Di atas MA pendek, menengah & panjang"
+        ma_position = "Di atas MA pendek, menengah, dan panjang menengah"
     elif close > ma10 and close > ma20:
-        ma_position = "Di atas MA pendek & menengah, tapi belum dominan di MA panjang"
+        ma_position = "Di atas MA pendek dan menengah"
     elif close < ma10 and close < ma20 and close < ma50:
-        ma_position = "Di bawah MA pendek, menengah & panjang"
+        ma_position = "Di bawah MA pendek, menengah, dan panjang menengah"
     else:
         ma_position = "Posisi harga campuran terhadap MA"
 
     if ma10 > ma20 > ma50:
-        ma_order = "MA pendek > MA menengah > MA panjang"
-        ma_structure = "Struktur bullish kuat"
+        ma_order = "MA10 > MA20 > MA50"
+        ma_structure = "Bullish alignment"
     elif ma10 < ma20 < ma50:
-        ma_order = "MA pendek < MA menengah < MA panjang"
-        ma_structure = "Struktur bearish dominan"
+        ma_order = "MA10 < MA20 < MA50"
+        ma_structure = "Bearish alignment"
     else:
-        ma_order = "Susunan MA masih campuran"
-        ma_structure = "Belum ada struktur dominan"
+        ma_order = "Susunan MA campuran"
+        ma_structure = "Belum ada alignment dominan"
 
-    # 3. Momentum
     if close > bb_upper:
         bb_text = "Harga menembus upper band"
-        bb_signal = "Momentum sangat kuat"
+        bb_signal = "Momentum sangat kuat, rawan jenuh jangka pendek"
     elif close < bb_lower:
         bb_text = "Harga menembus lower band"
         bb_signal = "Tekanan jual sangat kuat"
     else:
-        bb_text = "Harga masih bergerak di dalam Bollinger Band"
-        bb_signal = "Momentum normal / belum ekstrem"
+        bb_text = "Harga bergerak di dalam Bollinger Band"
+        bb_signal = "Momentum normal"
 
-    if rsi >= 75:
-        rsi_signal = f"RSI ±{round(rsi)} → bullish sangat kuat, rawan jenuh beli"
+    if rsi >= 80:
+        rsi_signal = f"RSI ±{round(rsi)} → sangat panas, rawan pullback"
+    elif rsi >= 70:
+        rsi_signal = f"RSI ±{round(rsi)} → bullish kuat, mulai jenuh"
     elif rsi >= 60:
-        rsi_signal = f"RSI ±{round(rsi)} → bullish"
+        rsi_signal = f"RSI ±{round(rsi)} → bullish sehat"
     elif rsi <= 30:
         rsi_signal = f"RSI ±{round(rsi)} → oversold / potensi rebound"
     else:
         rsi_signal = f"RSI ±{round(rsi)} → netral"
 
     if macd > macd_signal and macd_hist > prev_macd_hist:
-        macd_signal_text = "Golden cross + histogram melebar → sinyal kenaikan kuat"
+        macd_signal_text = "Golden cross + histogram menguat → momentum bullish mengembang"
     elif macd > macd_signal:
-        macd_signal_text = "Golden cross → momentum bullish"
+        macd_signal_text = "Golden cross → bullish"
     elif macd < macd_signal and macd_hist < prev_macd_hist:
-        macd_signal_text = "Dead cross + histogram melemah → tekanan turun kuat"
+        macd_signal_text = "Dead cross + histogram melemah → bearish"
     else:
-        macd_signal_text = "MACD campuran → belum ada momentum dominan"
+        macd_signal_text = "MACD campuran"
 
-    # 4. Volume
     if volume > vol_sma20 * 2:
-        volume_signal = "Volume melonjak besar → ada akumulasi kuat / tenaga beli tinggi"
+        volume_signal = "Volume melonjak sangat besar → akumulasi / breakout participation kuat"
+    elif volume > vol_sma20 * 1.5:
+        volume_signal = "Volume tinggi → partisipasi beli meningkat"
     elif volume > vol_sma20:
-        volume_signal = "Volume di atas rata-rata → minat meningkat"
+        volume_signal = "Volume di atas rata-rata"
     else:
-        volume_signal = "Volume normal / rendah → partisipasi belum besar"
+        volume_signal = "Volume normal / belum kuat"
 
-    # 5. MFI
     if mfi >= 85:
-        mfi_signal = f"MFI ±{round(mfi)} → aliran dana sangat tinggi, rawan profit taking"
+        mfi_signal = f"MFI ±{round(mfi)} → dana masuk sangat kuat, rawan profit taking jangka pendek"
     elif mfi >= 65:
-        mfi_signal = f"MFI ±{round(mfi)} → aliran dana masuk kuat"
+        mfi_signal = f"MFI ±{round(mfi)} → dana masuk kuat"
     elif mfi <= 20:
-        mfi_signal = f"MFI ±{round(mfi)} → aliran dana sangat lemah, potensi technical rebound"
+        mfi_signal = f"MFI ±{round(mfi)} → dana lemah, potensi technical rebound"
     else:
-        mfi_signal = f"MFI ±{round(mfi)} → aliran dana moderat"
+        mfi_signal = f"MFI ±{round(mfi)} → dana moderat"
 
-    # 6. Skenario trading
-    tp1 = r1
-    tp2 = r2
-    tp3 = r3
-    sl_agresif = s1
-    sl_moderat = s2
+    if breakout_valid:
+        aggressive_entry = close
+        moderate_entry = max(r1 * 0.98, ma10, ma20)
+        deep_entry = s1
+        setup_type = "Breakout / continuation"
+    elif trend_bias.startswith("Bullish"):
+        aggressive_entry = max(ma10, close * 0.985)
+        moderate_entry = max(ma20, s1)
+        deep_entry = s2
+        setup_type = "Pullback trend following"
+    else:
+        aggressive_entry = s1
+        moderate_entry = s2
+        deep_entry = s3
+        setup_type = "Mean reversion / sideways trade"
 
-    rr1 = round((tp1 - close) / max(close - sl_agresif, 0.01), 2) if close > sl_agresif else "-"
-    rr2 = round((tp2 - close) / max(close - sl_agresif, 0.01), 2) if close > sl_agresif else "-"
+    aggressive_entry = round(min(aggressive_entry, close), 2) if breakout_valid else round(aggressive_entry, 2)
+    moderate_entry = round(moderate_entry, 2)
+    deep_entry = round(deep_entry, 2)
 
-    if trend_bias.startswith("Bullish"):
-        entry_plan = f"Entry ideal saat pullback sehat di area {format_price(s1)}–{format_price(ma20)} atau buy on strength jika breakout valid di atas {format_price(r1)}."
-        action_plan = "Fokus buy on weakness saat trend sehat, atau buy on breakout jika volume mendukung."
+    if breakout_valid:
+        sl_agresif = round(min(ma20, r1 * 0.97, s1), 2)
+        sl_moderat = round(min(s1, ma20 * 0.98), 2)
+    elif trend_bias.startswith("Bullish"):
+        sl_agresif = round(min(s1, ma20 * 0.98), 2)
+        sl_moderat = round(min(s2, ma50 * 0.98), 2)
+    else:
+        sl_agresif = round(s1, 2)
+        sl_moderat = round(s2, 2)
+
+    if sl_agresif >= aggressive_entry:
+        sl_agresif = round(aggressive_entry * 0.97, 2)
+    if sl_moderat >= moderate_entry:
+        sl_moderat = round(moderate_entry * 0.95, 2)
+
+    tp1 = round(r1, 2)
+    tp2 = round(r2, 2)
+    tp3 = round(r3, 2)
+
+    rr1 = calc_rr(aggressive_entry, sl_agresif, tp1)
+    rr2 = calc_rr(aggressive_entry, sl_agresif, tp2)
+    rr3 = calc_rr(aggressive_entry, sl_agresif, tp3)
+
+    rr_quality = rr_quality_label(rr2)
+    setup_grade = get_setup_grade(trend_bias, breakout_valid, volume, vol_sma20, rr2)
+    avoid_trade = should_avoid_trade(setup_grade, rr2)
+
+    if avoid_trade:
+        entry_plan = (
+            f"Setup teknikal ada, tetapi entry di harga sekarang kurang ideal. "
+            f"Tunggu pullback sehat ke area {format_price(moderate_entry)} atau base baru yang memperbaiki risk-reward."
+        )
+        action_plan = "AVOID / WAIT. Jangan kejar harga bila RR belum memenuhi standar."
+    elif breakout_valid and rr2 >= MIN_ACCEPTABLE_RR:
+        entry_plan = (
+            f"Buy on strength masih layak selama harga bertahan di atas area {format_price(r1)} "
+            f"atau tunggu retest sehat ke area {format_price(moderate_entry)}."
+        )
+        action_plan = "Masih layak diikuti, tetapi hindari entry terlalu jauh dari area breakout."
+    elif trend_bias.startswith("Bullish") and rr2 >= 1.5:
+        entry_plan = (
+            f"Prioritas entry saat pullback sehat ke area {format_price(moderate_entry)}. "
+            f"Entry agresif bisa dipertimbangkan selama harga belum breakdown dari {format_price(sl_agresif)}."
+        )
+        action_plan = "Layak trading buy on weakness / buy on retest."
+    elif trend_bias.startswith("Bullish") and rr2 >= MIN_ACCEPTABLE_RR:
+        entry_plan = (
+            f"Trend masih bullish, tetapi entry terbaik ada di area pullback {format_price(moderate_entry)}. "
+            f"Kurangi agresivitas bila harga sudah terlalu dekat resistance."
+        )
+        action_plan = "Selektif. Boleh entry bertahap, jangan full di harga atas."
     elif trend_bias.startswith("Bearish"):
-        entry_plan = "Belum ideal untuk entry agresif. Tunggu base baru / reversal valid."
+        entry_plan = "Belum ideal untuk entry buy agresif. Tunggu reversal valid."
         action_plan = "Defensif. Hindari kejar harga."
     else:
-        entry_plan = f"Trading cepat di area support {format_price(s1)} dan resistance {format_price(r1)} sambil tunggu arah yang lebih jelas."
-        action_plan = "Netral. Tunggu konfirmasi."
+        entry_plan = (
+            f"Trading cepat hanya jika ada pantulan valid di area {format_price(s1)} "
+            f"atau breakout meyakinkan di atas {format_price(r1)}."
+        )
+        action_plan = "Netral. Tunggu konfirmasi arah."
+
+    if avoid_trade:
+        final_conclusion = "Setup belum layak dieksekusi karena risk-reward tidak memenuhi standar sehat."
+    elif breakout_valid and bullish_ma_alignment and bullish_macd and bullish_volume:
+        final_conclusion = "Bullish continuation / early trend. Momentum valid dan tidak layak disebut netral."
+    elif trend_bias.startswith("Bullish"):
+        final_conclusion = "Bias bullish masih dominan, dengan entry terbaik saat pullback sehat."
+    elif trend_bias.startswith("Bearish"):
+        final_conclusion = "Trend bearish masih dominan. Fokus proteksi risiko."
+    else:
+        final_conclusion = "Belum ada edge kuat. Tunggu konfirmasi baru."
 
     report = f"""📊 ANALISIS TEKNIKAL — ${denormalize_ticker(data["Ticker"])} (Daily)
 
@@ -699,7 +791,6 @@ def generate_python_logic_report(data):
 • Bias    : {trend_bias}
 • Fase    : {phase_text}
 • Struktur: {data["Price_Structure"]}
-• Catatan : {breakout_note}
 
 2. Moving Average
 • Posisi harga : {ma_position}
@@ -720,17 +811,45 @@ def generate_python_logic_report(data):
 • Support   : {format_price(s1)} | {format_price(s2)} | {format_price(s3)}
 • Resistance: {format_price(r1)} | {format_price(r2)} | {format_price(r3)}
 
-6. Strategy
-• Entry     : {entry_plan}
-• TP        : TP1 {format_price(tp1)} | TP2 {format_price(tp2)} | TP3 {format_price(tp3)}
-• SL        : Agresif {format_price(sl_agresif)} | Moderat {format_price(sl_moderat)}
-• R:R       : ke TP1 ≈ {rr1} | ke TP2 ≈ {rr2}
-• Aksi      : {action_plan}
+6. Trading Plan
+• Tipe setup    : {setup_type}
+• Entry agresif : {format_price(aggressive_entry)}
+• Entry moderat : {format_price(moderate_entry)}
+• Entry dalam   : {format_price(deep_entry)}
+• TP            : {format_price(tp1)} | {format_price(tp2)} | {format_price(tp3)}
+• SL agresif    : {format_price(sl_agresif)}
+• SL moderat    : {format_price(sl_moderat)}
 
-7. Ringkasan
+7. Risk Reward
+• RR ke TP1 : {rr1}
+• RR ke TP2 : {rr2}
+• RR ke TP3 : {rr3}
+• Kualitas  : {rr_quality}
+
+8. Setup Rating
+• Grade     : {setup_grade}
+• Status    : {"AVOID" if avoid_trade else "LAYAK DIPANTAU"}
+
+9. Actionable Strategy
+• Entry plan : {entry_plan}
+• Aksi       : {action_plan}
+
+10. Ringkasan
 • Harga saat ini : {format_price(close)}
-• Kesimpulan     : {trend_condition} dengan bias {trend_bias.lower()}. Perhatikan area {format_price(s1)}–{format_price(r1)} sebagai zona keputusan berikutnya.
+• Kesimpulan     : {final_conclusion}
 """
+    meta = {
+        "setup_grade": setup_grade,
+        "avoid_trade": avoid_trade,
+        "rr1": rr1,
+        "rr2": rr2,
+        "rr3": rr3,
+        "trend_bias": trend_bias,
+        "breakout_valid": breakout_valid,
+    }
+
+    if return_meta:
+        return report.strip(), meta
     return report.strip()
 
 
@@ -889,7 +1008,7 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
         macd > macd_signal
     )
 
-    price_ok = close <= SCREENER_MAX_PRICE
+    price_ok = close < SCREENER_MAX_PRICE
     volume_ok = volume_ratio >= SCREENER_MIN_VOLUME_RATIO
     return_ok = ret_1d > 0
     liquidity_ok = value_traded >= SCREENER_MIN_VALUE_TRADED
@@ -1039,7 +1158,7 @@ def format_screener_telegram(df: pd.DataFrame, max_items: int = 10):
             "📌 Screener Saham Syariah Trending\n\n"
             "Tidak ada saham yang lolos filter hari ini.\n"
             "Filter aktif:\n"
-            "• Harga ≤ 500\n"
+            "• Harga < 100\n"
             "• Volume > 1.5x rata-rata 20 hari\n"
             "• Return harian positif\n"
             "• Close > SMA20 > SMA50\n"
@@ -1050,7 +1169,7 @@ def format_screener_telegram(df: pd.DataFrame, max_items: int = 10):
         "📌 Screener Saham Syariah Trending",
         "",
         "Kriteria:",
-        "• Harga ≤ 500",
+        "• Harga < 100",
         "• Volume > 1.5x rata-rata 20 hari",
         "• Return harian positif",
         "• Close > SMA20 > SMA50",
@@ -1080,7 +1199,11 @@ def format_screener_telegram(df: pd.DataFrame, max_items: int = 10):
 # RUNNERS
 # =========================================================
 def build_final_report(data):
-    python_report = generate_python_logic_report(data)
+    python_report, meta = generate_python_logic_report(data, return_meta=True)
+
+    if should_avoid_trade(meta["setup_grade"], meta["rr2"]):
+        return python_report
+
     ai_text = generate_ai_insight(data, python_report)
     if ai_text:
         return f"{python_report}\n\n🧠 AI Insight:\n{ai_text}".strip()
@@ -1111,13 +1234,18 @@ def run_watchlist_mode():
 
 
 def run_screener_syariah_mode():
+    log("Masuk ke mode SCREENER SYARIAH")
+
     if SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE:
         try:
             update_syariah_universe(force_download=False)
+            log("Universe syariah berhasil diupdate")
         except Exception as e:
             log(f"Auto update universe gagal, lanjut pakai file existing: {e}")
 
     screened_df = screen_syariah_stocks(limit=SCREENER_LIMIT)
+    log(f"Jumlah kandidat screener: {0 if screened_df is None else len(screened_df)}")
+
     screener_text = format_screener_telegram(screened_df, max_items=SCREENER_LIMIT)
     send_to_telegram(screener_text)
 
@@ -1138,12 +1266,6 @@ def run_screener_syariah_mode():
 
 
 def run_hybrid_mode():
-    """
-    Hybrid:
-    1) jalankan screener syariah
-    2) analisa kandidat screener
-    3) analisa tambahan watchlist manual yang belum ter-cover
-    """
     if SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE:
         try:
             update_syariah_universe(force_download=False)
@@ -1185,14 +1307,20 @@ def run_hybrid_mode():
 # =========================================================
 def main():
     log(f"RUN_MODE = {RUN_MODE}")
+    log(f"WATCHLIST_FILE = {WATCHLIST_FILE}")
+    log(f"SYARIAH_UNIVERSE_FILE = {SYARIAH_UNIVERSE_FILE}")
+    log(f"SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE = {SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE}")
+    log(f"SCREENER_MAX_PRICE = {SCREENER_MAX_PRICE}")
 
     try:
         if RUN_MODE == "screener_syariah":
             run_screener_syariah_mode()
         elif RUN_MODE == "hybrid":
             run_hybrid_mode()
-        else:
+        elif RUN_MODE == "watchlist":
             run_watchlist_mode()
+        else:
+            raise ValueError(f"RUN_MODE tidak valid: {RUN_MODE}")
     except Exception as e:
         log(f"Fatal error: {e}")
         send_to_telegram(f"❌ Bot saham mengalami error fatal:\n{e}")
