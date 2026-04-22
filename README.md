@@ -1,4 +1,4 @@
-# 📈 IDX Technical Analyst Hybrid Engine
+# 📈 IDX Technical Analyst Hybrid Engine PRO
 
 ![Python](https://img.shields.io/badge/Python-3.12-blue?style=for-the-badge&logo=python)
 ![Pandas TA](https://img.shields.io/badge/Pandas_TA-Technical_Engine-success?style=for-the-badge)
@@ -7,182 +7,121 @@
 ![Telegram API](https://img.shields.io/badge/Telegram-Bot-informational?style=for-the-badge&logo=telegram)
 ![Yahoo Finance](https://img.shields.io/badge/YFinance-Market_Data-4CAF50?style=for-the-badge)
 
-**IDX Technical Analyst Hybrid Engine** adalah bot analitik otomatis untuk saham Indonesia yang mengintegrasikan **data pasar dari Yahoo Finance**, **engine analisa teknikal rule-based berbasis Python**, **screener saham syariah live**, **Telegram Bot**, serta **AI insight opsional**.
+**IDX Technical Analyst Hybrid Engine PRO** adalah bot analitik otomatis untuk saham Indonesia yang menggabungkan **data pasar Yahoo Finance**, **engine teknikal rule-based Python**, **screener saham syariah live**, **Telegram Bot**, dan **AI insight opsional**.
 
-Versi terbaru menggunakan pendekatan **Hybrid Deterministic Engine**, di mana **Python Rule-Based Engine** menjadi inti utama pengambilan keputusan analisa teknikal dan screening, sementara AI seperti **Gemini** atau **OpenRouter** hanya berfungsi sebagai pemberi insight tambahan. Dengan pendekatan ini, bot tetap dapat berjalan stabil walaupun layanan AI sedang gagal, rate limit, atau dinonaktifkan.
+Versi PRO ini menambahkan:
+- **Decision Engine** yang lebih tegas
+- **Dynamic entry trigger**
+- **Dua skenario trading**: pullback & breakout
+- **Smart stop loss** dengan batas maksimum 5%
+- **Position sizing**
+- **Setup grade** dan status `ENTRY READY / WAIT FOR TRIGGER / SKIP`
+
+Dengan pendekatan ini, bot tidak hanya memberi level statis, tetapi juga memberi konteks eksekusi dan manajemen risiko yang lebih realistis.
 
 ---
 
-## 🏛️ Arsitektur Sistem (Hybrid & Fault-Tolerant)
+## 🏛️ Arsitektur Sistem
 
-Sistem dirancang modular dan tahan gagal dengan alur kerja berikut:
-
-1. **Universe Builder (Syariah Auto Update):**
-   - Bot dapat mengunduh PDF **Daftar Efek Syariah (DES) OJK**
-   - Mengekstrak kode saham secara otomatis
-   - Menyimpan hasil ke file:
+1. **Universe Builder**
+   - Bot mengunduh PDF **DES OJK**
+   - Mengekstrak ticker saham syariah
+   - Menyimpan ke:
      - `data/syariah_stocks_master.txt`
      - `data/syariah_stocks.txt`
 
-2. **Data Ingestion:**
-   - `yfinance` mengambil data pasar **OHLCV** harian
-   - Sistem menangani normalisasi ticker `.JK`
-   - Mendukung batch download untuk screening banyak saham sekaligus
+2. **Data Ingestion**
+   - `yfinance` mengambil data OHLCV harian
+   - Ticker IDX otomatis dinormalisasi ke `.JK`
+   - Mendukung batch screening
 
-3. **Deterministic Technical Engine:**
-   - `pandas_ta` dan Python menghitung indikator teknikal:
+3. **Technical Engine PRO**
+   - Hitung indikator teknikal:
      - SMA 10 / 20 / 50 / 200
      - RSI
      - MACD
      - Bollinger Bands
-     - Money Flow Index (MFI)
+     - MFI
+     - ATR
      - Volume SMA 20
-   - Engine kemudian membentuk:
-     - struktur harga
+   - Hasil analisa:
+     - trend
      - market phase
-     - support & resistance
-     - skenario entry / TP / SL
-     - ranking screener
-     - setup grade
-     - filter avoid jika risk-reward buruk
+     - support/resistance
+     - pullback trigger
+     - breakout trigger
+     - risk-reward
+     - position sizing
 
-4. **Syariah Screener Engine:**
-   - Melakukan scanning otomatis seluruh universe saham syariah
-   - Menyaring kandidat berdasarkan:
-     - harga saham **di bawah 100**
-     - volume meningkat
-     - return harian positif
-     - trend bullish valid
-     - likuiditas minimum
-   - Kandidat terbaik diteruskan ke modul analisa teknikal
+4. **Decision Engine**
+   - Menentukan status:
+     - `ENTRY READY`
+     - `WAIT FOR TRIGGER`
+     - `SKIP`
+   - Menetapkan setup grade:
+     - `A`
+     - `B`
+     - `C`
+     - `Avoid`
 
-5. **AI Insight (Opsional):**
-   - Bot dapat meminta insight tambahan dari:
-     - **Gemini**
-     - **OpenRouter**
-   - Jika AI gagal, bot tetap mengirim laporan utama tanpa hambatan
+5. **Telegram Delivery**
+   - Kirim hasil screener
+   - Kirim analisa teknikal lengkap
+   - Kirim alert error
 
-6. **Delivery Layer:**
-   - Laporan screener dan analisa teknikal dikirim ke **Telegram**
-   - Eksekusi dapat berjalan:
-     - secara lokal
-     - melalui **GitHub Actions**
-     - secara terjadwal saat jam bursa
+6. **AI Insight Opsional**
+   - Gemini
+   - OpenRouter
 
 ---
 
-## 📋 Prasyarat (*Prerequisites*)
+## 📋 Fitur Utama
 
-Sebelum menjalankan project ini, siapkan:
-
-- Python **3.12**
-- Token bot Telegram dari **@BotFather**
-- ID chat / channel Telegram
-- Koneksi internet untuk mengambil data dari Yahoo Finance
-- Opsional:
-  - **Google AI Studio** untuk `GEMINI_API_KEY`
-  - **OpenRouter** untuk `OPENROUTER_API_KEY`
-
----
-
-## 📊 Fitur Utama
-
-### 1. Analisa Teknikal Otomatis
-Bot menghasilkan analisa teknikal saham Indonesia berbasis **Python rule-based engine**.
-
-Indikator yang digunakan:
-- SMA 10 / 20 / 50 / 200
-- RSI 14
-- MACD
-- Bollinger Bands
-- Volume SMA 20
-- MFI 14
-
-Output analisa meliputi:
-- Tren utama
-- Struktur harga
-- Market phase
-- Momentum
-- Volume & money flow
-- Support & resistance
-- Strategi entry, TP, dan SL
-- Setup grade
-- Status avoid jika RR buruk
-
----
-
-### 2. Screener Saham Syariah Live
-Bot dapat melakukan screening otomatis terhadap seluruh saham syariah aktif berdasarkan data pasar terbaru dari Yahoo Finance.
-
-Kriteria utama screener:
+### 1. Screener Saham Syariah Live
+Kriteria utama:
 - Harga saham **< 100**
-- Return 1 hari positif
-- Volume > rata-rata volume 20 hari
+- Return harian positif
+- Volume > 1.5x rata-rata 20 hari
 - `Close > SMA20 > SMA50`
 - RSI minimum sesuai threshold
 - MACD bullish
-- Nilai transaksi minimum untuk menjaga likuiditas
+- Nilai transaksi minimum
 
-Hasil screener akan diurutkan berdasarkan skor prioritas, lalu saham terbaik akan dianalisa lebih lanjut oleh modul teknikal.
+### 2. Dynamic Entry Trigger
+Bot tidak lagi hanya menulis “entry di level X”, tetapi memisahkan:
+- **Pullback Entry**
+- **Breakout Entry**
 
----
+Dengan trigger seperti:
+- bullish candle
+- rebound
+- volume naik
+- breakout + volume spike
 
-### 3. Auto Update Universe Saham Syariah
-Bot dapat memperbarui daftar saham syariah otomatis dari **DES OJK**.
+### 3. Smart Stop Loss
+SL dibatasi agar tetap realistis:
+- berdasarkan struktur teknikal
+- dibatasi **maksimum 5%** dari entry
 
-Proses:
-- download PDF DES resmi
-- ekstrak kode saham
-- simpan ke file master
-- buat file screener operasional
-- tambahkan penyesuaian manual jika diperlukan
+### 4. Position Sizing
+Bot menghitung:
+- modal
+- risk per trade
+- risk nominal
+- maksimum posisi
+- estimasi lot
 
-Dengan fitur ini, Anda tidak perlu mengelola universe saham syariah sepenuhnya secara manual.
-
----
-
-### 4. Multi Mode Operation
-Bot mendukung tiga mode utama:
-
-#### `watchlist`
-Mode lama berbasis daftar saham manual pada file `data/saham_pantauan.txt`.
-
-#### `screener_syariah`
-Mode otomatis penuh:
-- update universe saham syariah
-- scan live market data
-- kirim shortlist
-- lanjut analisa teknikal kandidat terbaik
-
-#### `hybrid`
-Mode gabungan:
-- jalankan screener syariah live
-- analisa kandidat hasil screener
-- analisa tambahan watchlist manual yang belum masuk shortlist
+### 5. Decision Engine
+Output utama:
+- Trend
+- Kondisi
+- RR Status
+- Action
+- Grade
 
 ---
 
-### 5. Telegram Integration
-Bot mengirim hasil ke Telegram dalam format yang mudah dibaca, meliputi:
-- hasil screener
-- shortlist saham syariah trending
-- analisa teknikal lengkap per saham
-- notifikasi error / kegagalan fetch data
-
----
-
-### 6. AI Insight Opsional
-Setelah report utama selesai dibuat oleh engine Python, bot dapat menambahkan insight AI tambahan.
-
-Provider yang didukung:
-- Gemini
-- OpenRouter
-
-AI insight bersifat **opsional**, dan dapat dimatikan penuh bila Anda ingin hanya memakai engine rule-based.
-
----
-
-## 📁 Struktur Folder Final
+## 📁 Struktur Folder
 
 ```bash
 IDX-Technical-Analyst-Hybrid-Engine/
@@ -204,53 +143,15 @@ IDX-Technical-Analyst-Hybrid-Engine/
 
 ---
 
-## 📄 Fungsi File
+## 🚀 Instalasi Lokal
 
-### `bot_saham.py`
-File utama bot yang berisi:
-- updater universe syariah
-- screener live
-- analisa teknikal
-- formatter laporan
-- Telegram sender
-- AI insight opsional
-
-### `data/saham_pantauan.txt`
-Daftar saham manual untuk mode `watchlist` atau tambahan di mode `hybrid`.
-
-Contoh:
-```text
-BBRI
-TLKM
-BRIS
-BUMI
-```
-
-### `data/syariah_stocks_master.txt`
-Master universe saham syariah hasil ekstraksi DES OJK.
-
-### `data/syariah_stocks.txt`
-Universe final yang dipakai screener live.
-
-### `data/des_syariah_latest.pdf`
-Cache PDF DES yang diunduh otomatis oleh bot.
-
-### `.github/workflows/daily_report.yml`
-Workflow GitHub Actions untuk eksekusi otomatis.
-
----
-
-## 🚀 Panduan Instalasi (Lokal)
-
-### 1. Kloning Repositori
-
+### 1. Clone repo
 ```bash
 git clone https://github.com/USERNAME_ANDA/IDX-Technical-Analyst-Hybrid-Engine.git
 cd IDX-Technical-Analyst-Hybrid-Engine
 ```
 
-### 2. Buat Virtual Environment & Instalasi Dependency
-
+### 2. Buat virtual environment
 ```bash
 python -m venv venv
 ```
@@ -265,8 +166,7 @@ source venv/bin/activate
 venv\Scripts\activate
 ```
 
-Lalu install dependency:
-
+### 3. Install dependency
 ```bash
 pip install -r requirements.txt
 ```
@@ -274,8 +174,6 @@ pip install -r requirements.txt
 ---
 
 ## ⚙️ Requirements
-
-Isi `requirements.txt` minimal:
 
 ```txt
 requests
@@ -288,92 +186,43 @@ google-genai
 
 ---
 
-## 🔐 Konfigurasi Environment Variables
+## 🔐 Environment Variables
 
-Buat file `.env` di root project berdasarkan `.env.example`.
+Buat file `.env` berdasarkan `.env.example`.
 
-Contoh:
+Contoh penting:
 
 ```env
-TELEGRAM_BOT_TOKEN=isi_token_bot
-TELEGRAM_CHAT_ID=isi_chat_id
-
 RUN_MODE=screener_syariah
-WATCHLIST_FILE=data/saham_pantauan.txt
-SYARIAH_UNIVERSE_FILE=data/syariah_stocks.txt
-SYARIAH_MASTER_FILE=data/syariah_stocks_master.txt
-DES_PDF_LOCAL=data/des_syariah_latest.pdf
-
-DES_PDF_URL=https://ojk.go.id/id/kanal/syariah/data-dan-statistik/daftar-efek-syariah/Documents/Pages/Daftar-Efek-Syariah-KEP59D042025/SK%20DES%20Periode%20II%202025%20%28Lampiran%20I%29.pdf
-
-SCREENER_LIMIT=5
-SCREENER_PERIOD=6mo
-SCREENER_INTERVAL=1d
 SCREENER_MAX_PRICE=100
-SCREENER_MIN_VOLUME_RATIO=1.5
-SCREENER_MIN_VALUE_TRADED=1000000000
-SCREENER_MIN_RSI=55
-SCREENER_BATCH_SIZE=40
-SCREENER_DELAY_SECONDS=1.0
-SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE=1
-
 MIN_ACCEPTABLE_RR=1.2
-
-ENABLE_AI_INSIGHT=0
-AI_PROVIDER=off
-GEMINI_API_KEY=
-OPENROUTER_API_KEY=
-
-INCIDENTAL_ADDITIONS=BSAI
-EXCLUDED_CODES=ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE
-TELEGRAM_PREFIX=
+ACCOUNT_SIZE=3000000
+RISK_PER_TRADE_PCT=1
+MAX_STOP_PCT=5
 ```
+
+Keterangan:
+- `SCREENER_MAX_PRICE`: filter harga maksimum saham
+- `MIN_ACCEPTABLE_RR`: RR minimum agar setup layak
+- `ACCOUNT_SIZE`: modal akun
+- `RISK_PER_TRADE_PCT`: risk per trade dalam persen
+- `MAX_STOP_PCT`: batas maksimum SL dari entry
 
 ---
 
 ## ▶️ Mode Penggunaan
 
-### 1. Watchlist Mode
-
-Mode ini membaca file `data/saham_pantauan.txt`.
-
+### Watchlist
 ```env
 RUN_MODE=watchlist
 ```
 
-Jalankan:
-```bash
-python bot_saham.py
-```
-
----
-
-### 2. Screener Syariah Mode
-
-Mode ini akan:
-- update universe syariah otomatis
-- scan saham syariah live
-- kirim shortlist ke Telegram
-- analisa teknikal kandidat terbaik
-
+### Screener Syariah
 ```env
 RUN_MODE=screener_syariah
 ```
 
-Jalankan:
-```bash
-python bot_saham.py
-```
-
----
-
-### 3. Hybrid Mode
-
-Mode ini akan:
-- scan saham syariah live
-- analisa shortlist hasil screener
-- analisa tambahan watchlist manual
-
+### Hybrid
 ```env
 RUN_MODE=hybrid
 ```
@@ -387,117 +236,82 @@ python bot_saham.py
 
 ## 📤 Contoh Output Telegram
 
-### Screener
-```text
-📌 Screener Saham Syariah Trending
-
-Kriteria:
-• Harga < 100
-• Volume > 1.5x rata-rata 20 hari
-• Return harian positif
-• Close > SMA20 > SMA50
-• RSI dan MACD bullish
-```
-
-### Analisa teknikal
 ```text
 📊 ANALISIS TEKNIKAL — $XXXX (Daily)
 
-7. Risk Reward
-• RR ke TP1 : 0.95
-• RR ke TP2 : 1.62
-• RR ke TP3 : 2.30
-• Kualitas  : Sehat
+1. Decision Engine
+• Trend      : Bullish continuation / breakout confirmation
+• Kondisi    : Overextended / breakout kuat
+• RR Status  : Sehat
+• Action     : WAIT FOR TRIGGER
+• Grade      : C
 
-8. Setup Rating
-• Grade     : B
-• Status    : LAYAK DIPANTAU
+4. Skenario Pullback Entry
+• Area       : 134
+• Trigger    : Bullish candle + rebound + volume naik
+• Status     : WAIT
+• Entry      : 134
+• SL         : 128
+• TP         : 149 | 153
+• RR         : 2.4
+
+5. Skenario Breakout Entry
+• Area       : >145
+• Trigger    : Breakout + volume spike
+• Status     : VALID
+• Entry      : 146
+• SL         : 139
+• TP         : 153 | 158
+• RR         : 1.71
 ```
 
 ---
 
-## ⚙️ Konfigurasi Otomasi (GitHub Actions)
+## ⚙️ GitHub Actions
 
-Untuk menjalankan bot secara otomatis, gunakan workflow berikut:
-
-Simpan sebagai:
+Simpan workflow di:
 ```text
 .github/workflows/daily_report.yml
 ```
 
-Workflow sudah disesuaikan agar:
-- memakai `RUN_MODE=screener_syariah`
-- update universe syariah otomatis
-- memakai filter harga **< 100**
-- menampilkan debug runtime config
+Workflow final sudah disesuaikan untuk:
+- mode `screener_syariah`
+- harga `< 100`
+- risk-reward minimum
+- position sizing
+- smart stop loss
+- debug runtime config
 
 ---
 
-## 🔑 GitHub Secrets yang Dibutuhkan
+## 🔑 GitHub Secrets
 
-Tambahkan secrets berikut di GitHub repository:
-
+Tambahkan di:
 **Settings → Secrets and variables → Actions**
 
-### Secrets:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 - `GEMINI_API_KEY` *(opsional)*
 - `OPENROUTER_API_KEY` *(opsional)*
 
-Jika AI insight tidak digunakan, API key AI dapat dikosongkan.
-
 ---
 
-## 🔄 Alur Kerja Internal Bot
+## 🛠️ Roadmap
 
-1. cek / update PDF DES
-2. ekstrak universe saham syariah
-3. bangun file master dan file screener
-4. ambil data harga dari Yahoo Finance
-5. hitung indikator teknikal
-6. lakukan screening kandidat
-7. urutkan berdasarkan skor
-8. kirim shortlist ke Telegram
-9. analisa teknikal kandidat terbaik
-10. evaluasi RR dan setup grade
-11. tandai avoid jika setup buruk
-12. kirim report final
-
----
-
-## 🛠️ Roadmap Pengembangan
-
-### Phase 1: Penyempurnaan Engine
 - Backtest hasil screener
-- Penyimpanan history kandidat harian ke CSV / SQLite
-- Optimasi ranking dan scoring
-
-### Phase 2: Visualisasi & Dashboard
-- Dashboard web hasil screening
+- Simpan history kandidat ke CSV / SQLite
 - Heatmap saham syariah
-- Rekap performa sinyal
-
-### Phase 3: Ekspansi Analisa
-- Analisa multi-timeframe
+- Multi-timeframe engine
 - Relative strength ranking
-- Filter berbasis sektor
-- Integrasi data fundamental
-- Peringatan breakout intraday
+- Dashboard web
 
 ---
 
 ## 🛡️ Disclaimer
 
 Tools ini dibuat untuk tujuan edukasi, riset, dan otomasi analisa teknikal.  
-Semua hasil screener, report rule-based, dan insight AI **bukan merupakan rekomendasi investasi mutlak**.
+Semua hasil screener, report rule-based, dan insight AI **bukan rekomendasi investasi mutlak**.
 
-Segala keputusan beli, jual, atau trading sepenuhnya menjadi tanggung jawab pengguna.
+Segala keputusan beli, jual, atau trading tetap menjadi tanggung jawab pengguna.
 
 **Do Your Own Research (DYOR).**
-
----
-
-## License
-
-**GNU General Public License v3.0**
