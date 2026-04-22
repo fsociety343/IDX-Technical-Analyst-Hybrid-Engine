@@ -57,6 +57,15 @@ RISK_PER_TRADE_PCT = float(os.environ.get("RISK_PER_TRADE_PCT", "1"))
 MAX_STOP_PCT = float(os.environ.get("MAX_STOP_PCT", "5"))
 MAX_STOP_DECIMAL = MAX_STOP_PCT / 100.0
 
+# PRO v2 additions
+BREAKOUT_BUFFER_PCT = float(os.environ.get("BREAKOUT_BUFFER_PCT", "1")) / 100.0
+BREAKOUT_BUFFER_ABS = float(os.environ.get("BREAKOUT_BUFFER_ABS", "1"))
+PULLBACK_EXPIRY_DAYS = int(os.environ.get("PULLBACK_EXPIRY_DAYS", "5"))
+USE_MARKET_FILTER = os.environ.get("USE_MARKET_FILTER", "1").strip() == "1"
+MARKET_SYMBOL = os.environ.get("MARKET_SYMBOL", "^JKSE").strip()
+MOVE_SL_TO_BEP_AT_PCT = float(os.environ.get("MOVE_SL_TO_BEP_AT_PCT", "5"))
+PARTIAL_TAKE_PROFIT_AT_TP1_PCT = float(os.environ.get("PARTIAL_TAKE_PROFIT_AT_TP1_PCT", "50"))
+
 INCIDENTAL_ADDITIONS = [x.strip().upper() for x in os.environ.get("INCIDENTAL_ADDITIONS", "BSAI").split(",") if x.strip()]
 EXCLUDED_CODES = {x.strip().upper() for x in os.environ.get("EXCLUDED_CODES", "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE").split(",") if x.strip()}
 
@@ -244,9 +253,9 @@ def rr_quality_label(rr_value):
     return "Kurang menarik"
 
 
-def get_setup_grade(action_status, rr_best, breakout_confirmed, pullback_confirmed):
+def get_setup_grade(action_status, rr_best, breakout_confirmed, pullback_confirmed, market_ok):
     if action_status == "ENTRY READY":
-        if rr_best >= 2 and (breakout_confirmed or pullback_confirmed):
+        if market_ok and rr_best >= 2 and (breakout_confirmed or pullback_confirmed):
             return "A"
         if rr_best >= 1.5:
             return "B"
@@ -415,6 +424,85 @@ def load_watchlist():
 
     items = [normalize_ticker(x) for x in read_lines_file(str(fp))]
     return sorted(set([x for x in items if x]))
+
+
+# =========================================================
+# MARKET FILTER
+# =========================================================
+def get_market_filter_data():
+    try:
+        idx = yf.Ticker(MARKET_SYMBOL)
+        df = idx.history(period="6mo", interval="1d", auto_adjust=False)
+        if df.empty or len(df) < 60:
+            return {
+                "symbol": MARKET_SYMBOL,
+                "available": False,
+                "status": "Data tidak tersedia",
+                "market_ok": True,
+                "close": 0,
+                "ma20": 0,
+                "ma50": 0,
+                "rsi14": 0,
+            }
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        df = df.copy()
+        df["SMA20"] = ta.sma(df["Close"], length=20)
+        df["SMA50"] = ta.sma(df["Close"], length=50)
+        df["RSI14"] = ta.rsi(df["Close"], length=14)
+        df = df.dropna().copy()
+
+        if df.empty:
+            return {
+                "symbol": MARKET_SYMBOL,
+                "available": False,
+                "status": "Indikator tidak cukup",
+                "market_ok": True,
+                "close": 0,
+                "ma20": 0,
+                "ma50": 0,
+                "rsi14": 0,
+            }
+
+        last = df.iloc[-1]
+        close = float(last["Close"])
+        ma20 = float(last["SMA20"])
+        ma50 = float(last["SMA50"])
+        rsi14 = float(last["RSI14"])
+
+        market_ok = close > ma20 and ma20 >= ma50 and rsi14 >= 45
+
+        if close > ma20 and ma20 >= ma50 and rsi14 >= 55:
+            status = "Uptrend / mendukung"
+        elif close >= ma20 and rsi14 >= 45:
+            status = "Sideways sehat / masih mendukung"
+        else:
+            status = "Market lemah / kurang mendukung"
+
+        return {
+            "symbol": MARKET_SYMBOL,
+            "available": True,
+            "status": status,
+            "market_ok": market_ok if USE_MARKET_FILTER else True,
+            "close": round(close, 2),
+            "ma20": round(ma20, 2),
+            "ma50": round(ma50, 2),
+            "rsi14": round(rsi14, 2),
+        }
+
+    except Exception as e:
+        log(f"Market filter error: {e}")
+        return {
+            "symbol": MARKET_SYMBOL,
+            "available": False,
+            "status": f"Error: {e}",
+            "market_ok": True,
+            "close": 0,
+            "ma20": 0,
+            "ma50": 0,
+            "rsi14": 0,
+        }
 
 
 # =========================================================
@@ -692,6 +780,15 @@ def detect_breakout_trigger(data, breakout_level):
     return (close_break or high_break) and volume_spike
 
 
+def build_trade_management_plan(entry, tp1):
+    be_trigger = round(entry * (1 + MOVE_SL_TO_BEP_AT_PCT / 100.0), 2)
+    return [
+        f"Jika harga naik {format_percent(MOVE_SL_TO_BEP_AT_PCT)}, geser SL ke BEP ({format_price(entry)}).",
+        f"Jika TP1 ({format_price(tp1)}) tercapai, ambil partial profit {PARTIAL_TAKE_PROFIT_AT_TP1_PCT:.0f}%.",
+        "Sisa posisi diarahkan ke TP2 dengan SL dinaikkan ke area entry / di atas BEP.",
+    ]
+
+
 def build_trade_scenarios(data):
     close = data["Close Price"]
     ma10 = data["MA10"]
@@ -705,64 +802,86 @@ def build_trade_scenarios(data):
 
     # Pullback scenario
     pullback_area = round(max(ma20, s1), 2)
-    pullback_entry = pullback_area
-    structural_pullback_sl = min(s1 * 0.99, pullback_entry - atr * 0.8)
-    max_allowed_pullback_sl = pullback_entry * (1 - MAX_STOP_DECIMAL)
-    pullback_sl = round(max(structural_pullback_sl, max_allowed_pullback_sl), 2)
-    if pullback_sl >= pullback_entry:
-        pullback_sl = round(pullback_entry * (1 - min(MAX_STOP_DECIMAL, 0.04)), 2)
+    pullback_entry = round(pullback_area, 2)
+
+    # tactical stop closer; structural stop deeper
+    tactical_pullback_sl = round(max(pullback_entry - atr * 0.5, pullback_entry * (1 - 0.03), s1 * 0.995), 2)
+    structural_pullback_sl = round(max(min(s1 * 0.99, pullback_entry * (1 - MAX_STOP_DECIMAL)), pullback_entry * (1 - MAX_STOP_DECIMAL)), 2)
+
+    if tactical_pullback_sl >= pullback_entry:
+        tactical_pullback_sl = round(pullback_entry * 0.97, 2)
+    if structural_pullback_sl >= pullback_entry:
+        structural_pullback_sl = round(pullback_entry * (1 - MAX_STOP_DECIMAL), 2)
+
     pullback_tp1 = round(max(r1, pullback_entry * 1.05), 2)
-    pullback_tp2 = round(max(r2, pullback_entry * 1.10), 2)
-    pullback_rr = calc_rr(pullback_entry, pullback_sl, pullback_tp2)
+    pullback_tp2 = round(max(r2, pullback_entry * 1.11), 2)
+    pullback_rr_tactical = calc_rr(pullback_entry, tactical_pullback_sl, pullback_tp2)
+    pullback_rr_structural = calc_rr(pullback_entry, structural_pullback_sl, pullback_tp2)
     pullback_trigger_ready = detect_pullback_trigger(data, pullback_area)
 
-    # Breakout scenario
+    # Breakout scenario with buffer
     breakout_level = round(max(r1, close), 2)
-    breakout_entry = round(max(breakout_level, close), 2)
-    structural_breakout_sl = min(ma10, ma20, breakout_level * 0.97, breakout_entry - atr)
-    max_allowed_breakout_sl = breakout_entry * (1 - MAX_STOP_DECIMAL)
-    breakout_sl = round(max(structural_breakout_sl, max_allowed_breakout_sl), 2)
-    if breakout_sl >= breakout_entry:
-        breakout_sl = round(breakout_entry * (1 - min(MAX_STOP_DECIMAL, 0.04)), 2)
+    breakout_entry = round(max(
+        breakout_level * (1 + BREAKOUT_BUFFER_PCT),
+        breakout_level + BREAKOUT_BUFFER_ABS
+    ), 2)
+
+    tactical_breakout_sl = round(max(breakout_entry - atr * 0.7, breakout_entry * (1 - 0.04), ma10, breakout_level * 0.98), 2)
+    structural_breakout_sl = round(max(min(ma20, breakout_level * 0.97, breakout_entry * (1 - MAX_STOP_DECIMAL)), breakout_entry * (1 - MAX_STOP_DECIMAL)), 2)
+
+    if tactical_breakout_sl >= breakout_entry:
+        tactical_breakout_sl = round(breakout_entry * 0.96, 2)
+    if structural_breakout_sl >= breakout_entry:
+        structural_breakout_sl = round(breakout_entry * (1 - MAX_STOP_DECIMAL), 2)
+
     breakout_tp1 = round(max(r2, breakout_entry * 1.04), 2)
     breakout_tp2 = round(max(r3, breakout_entry * 1.08), 2)
-    breakout_rr = calc_rr(breakout_entry, breakout_sl, breakout_tp2)
+    breakout_rr_tactical = calc_rr(breakout_entry, tactical_breakout_sl, breakout_tp2)
+    breakout_rr_structural = calc_rr(breakout_entry, structural_breakout_sl, breakout_tp2)
     breakout_trigger_ready = detect_breakout_trigger(data, breakout_level)
 
-    pullback_pos = calculate_position_size(pullback_entry, pullback_sl)
-    breakout_pos = calculate_position_size(breakout_entry, breakout_sl)
+    pullback_pos = calculate_position_size(pullback_entry, tactical_pullback_sl)
+    breakout_pos = calculate_position_size(breakout_entry, tactical_breakout_sl)
 
     pullback = {
         "name": "Pullback Entry",
-        "area": round(pullback_area, 2),
+        "area": pullback_area,
         "trigger_text": "Bullish candle + rebound + volume naik",
         "trigger_ready": pullback_trigger_ready,
-        "entry": round(pullback_entry, 2),
-        "sl": round(pullback_sl, 2),
-        "tp1": round(pullback_tp1, 2),
-        "tp2": round(pullback_tp2, 2),
-        "rr": round(pullback_rr, 2),
+        "entry": pullback_entry,
+        "sl_tactical": tactical_pullback_sl,
+        "sl_structural": structural_pullback_sl,
+        "tp1": pullback_tp1,
+        "tp2": pullback_tp2,
+        "rr_tactical": round(pullback_rr_tactical, 2),
+        "rr_structural": round(pullback_rr_structural, 2),
+        "expiry_days": PULLBACK_EXPIRY_DAYS,
         "position": pullback_pos,
+        "trade_management": build_trade_management_plan(pullback_entry, pullback_tp1),
     }
 
     breakout = {
         "name": "Breakout Entry",
-        "area": round(breakout_level, 2),
-        "trigger_text": "Breakout + volume spike",
+        "area": breakout_level,
+        "trigger_text": f"Close breakout + volume spike + buffer {format_percent(BREAKOUT_BUFFER_PCT*100)}",
         "trigger_ready": breakout_trigger_ready,
-        "entry": round(breakout_entry, 2),
-        "sl": round(breakout_sl, 2),
-        "tp1": round(breakout_tp1, 2),
-        "tp2": round(breakout_tp2, 2),
-        "rr": round(breakout_rr, 2),
+        "entry": breakout_entry,
+        "sl_tactical": tactical_breakout_sl,
+        "sl_structural": structural_breakout_sl,
+        "tp1": breakout_tp1,
+        "tp2": breakout_tp2,
+        "rr_tactical": round(breakout_rr_tactical, 2),
+        "rr_structural": round(breakout_rr_structural, 2),
+        "expiry_days": 1,
         "position": breakout_pos,
+        "trade_management": build_trade_management_plan(breakout_entry, breakout_tp1),
     }
 
     return pullback, breakout
 
 
 # =========================================================
-# REPORT RULE-BASED (LEVEL PRO)
+# REPORT RULE-BASED (PRO v2)
 # =========================================================
 def generate_python_logic_report(data, return_meta=False):
     close = data["Close Price"]
@@ -790,6 +909,8 @@ def generate_python_logic_report(data, return_meta=False):
     breakout_valid = data["Breakout_Valid"]
     structure_flag = data["Structure_Flag"]
     phase_text = data["Market_Phase"]
+
+    market_filter = get_market_filter_data()
 
     bullish_ma_alignment = close > ma20 > ma50
     strong_bullish_ma = close > ma10 > ma20 > ma50
@@ -864,43 +985,59 @@ def generate_python_logic_report(data, return_meta=False):
 
     pullback, breakout = build_trade_scenarios(data)
 
-    rr_best = max(pullback["rr"], breakout["rr"])
+    rr_best = max(pullback["rr_tactical"], breakout["rr_tactical"])
     rr_status = rr_quality_label(rr_best)
 
-    pullback_confirmed = pullback["trigger_ready"] and pullback["rr"] >= MIN_ACCEPTABLE_RR
-    breakout_confirmed = breakout["trigger_ready"] and breakout["rr"] >= MIN_ACCEPTABLE_RR
+    pullback_confirmed = pullback["trigger_ready"] and pullback["rr_tactical"] >= MIN_ACCEPTABLE_RR
+    breakout_confirmed = breakout["trigger_ready"] and breakout["rr_tactical"] >= MIN_ACCEPTABLE_RR
 
-    if breakout_confirmed or pullback_confirmed:
-        action_status = "ENTRY READY"
-    elif trend_bias.startswith("Bullish"):
-        action_status = "WAIT FOR TRIGGER"
+    if not market_filter["market_ok"]:
+        if trend_bias.startswith("Bullish"):
+            action_status = "WAIT FOR TRIGGER"
+        else:
+            action_status = "SKIP"
     else:
-        action_status = "SKIP"
+        if breakout_confirmed or pullback_confirmed:
+            action_status = "ENTRY READY"
+        elif trend_bias.startswith("Bullish"):
+            action_status = "WAIT FOR TRIGGER"
+        else:
+            action_status = "SKIP"
 
-    setup_grade = get_setup_grade(action_status, rr_best, breakout_confirmed, pullback_confirmed)
-    avoid_trade = action_status == "SKIP"
+    setup_grade = get_setup_grade(
+        action_status,
+        rr_best,
+        breakout_confirmed,
+        pullback_confirmed,
+        market_filter["market_ok"]
+    )
 
     if action_status == "ENTRY READY":
-        if breakout_confirmed and breakout["rr"] >= pullback["rr"]:
+        if breakout_confirmed and breakout["rr_tactical"] >= pullback["rr_tactical"]:
             preferred = breakout
             preferred_label = "Breakout Entry"
         else:
             preferred = pullback
             preferred_label = "Pullback Entry"
-        final_conclusion = f"Setup siap dieksekusi pada skenario {preferred_label} dengan RR {preferred['rr']}."
+        final_conclusion = f"Setup siap dieksekusi pada skenario {preferred_label} dengan RR {preferred['rr_tactical']}."
     elif action_status == "WAIT FOR TRIGGER":
-        if trend_bias.startswith("Bullish"):
-            final_conclusion = "Trend masih bullish, tetapi entry belum valid. Tunggu trigger konfirmasi agar RR membaik."
+        if not market_filter["market_ok"]:
+            final_conclusion = f"Setup saham menarik, tetapi market filter {MARKET_SYMBOL} belum mendukung. Tunggu market membaik."
         else:
-            final_conclusion = "Belum ada edge kuat. Tunggu trigger baru."
+            final_conclusion = "Trend masih menarik, tetapi entry belum valid. Tunggu trigger konfirmasi agar RR membaik."
     else:
         final_conclusion = "Setup tidak layak untuk sekarang. Fokus proteksi modal."
+
+    best_position = pullback["position"] if pullback["rr_tactical"] >= breakout["rr_tactical"] else breakout["position"]
+    best_name = "Pullback" if pullback["rr_tactical"] >= breakout["rr_tactical"] else "Breakout"
+    best_management = pullback["trade_management"] if pullback["rr_tactical"] >= breakout["rr_tactical"] else breakout["trade_management"]
 
     report = f"""📊 ANALISIS TEKNIKAL — ${denormalize_ticker(data["Ticker"])} (Daily)
 
 1. Decision Engine
 • Trend      : {trend_condition}
 • Kondisi    : {condition_text}
+• Market     : {market_filter["status"]}
 • RR Status  : {rr_status}
 • Action     : {action_status}
 • Grade      : {setup_grade}
@@ -918,45 +1055,56 @@ def generate_python_logic_report(data, return_meta=False):
 • Resistance : {format_price(r1)} | {format_price(r2)} | {format_price(r3)}
 
 4. Skenario Pullback Entry
-• Area       : {format_price(pullback["area"])}
-• Trigger    : {pullback["trigger_text"]}
-• Status     : {"VALID" if pullback["trigger_ready"] else "WAIT"}
-• Entry      : {format_price(pullback["entry"])}
-• SL         : {format_price(pullback["sl"])}
-• TP         : {format_price(pullback["tp1"])} | {format_price(pullback["tp2"])}
-• RR         : {pullback["rr"]}
+• Area         : {format_price(pullback["area"])}
+• Trigger      : {pullback["trigger_text"]}
+• Status       : {"VALID" if pullback["trigger_ready"] else "WAIT"}
+• Entry        : {format_price(pullback["entry"])}
+• Tactical SL  : {format_price(pullback["sl_tactical"])}
+• Structural SL: {format_price(pullback["sl_structural"])}
+• TP           : {format_price(pullback["tp1"])} | {format_price(pullback["tp2"])}
+• RR Tactical  : {pullback["rr_tactical"]}
+• RR Structural: {pullback["rr_structural"]}
+• Expiry       : {pullback["expiry_days"]} hari bursa
 
 5. Skenario Breakout Entry
-• Area       : > {format_price(breakout["area"])}
-• Trigger    : {breakout["trigger_text"]}
-• Status     : {"VALID" if breakout["trigger_ready"] else "WAIT"}
-• Entry      : {format_price(breakout["entry"])}
-• SL         : {format_price(breakout["sl"])}
-• TP         : {format_price(breakout["tp1"])} | {format_price(breakout["tp2"])}
-• RR         : {breakout["rr"]}
+• Area         : > {format_price(breakout["area"])}
+• Trigger      : {breakout["trigger_text"]}
+• Status       : {"VALID" if breakout["trigger_ready"] else "WAIT"}
+• Entry        : {format_price(breakout["entry"])}
+• Tactical SL  : {format_price(breakout["sl_tactical"])}
+• Structural SL: {format_price(breakout["sl_structural"])}
+• TP           : {format_price(breakout["tp1"])} | {format_price(breakout["tp2"])}
+• RR Tactical  : {breakout["rr_tactical"]}
+• RR Structural: {breakout["rr_structural"]}
 
 6. Position Sizing (Skenario Terbaik)
 • Modal            : {format_big_number(ACCOUNT_SIZE)}
 • Risk per trade   : {RISK_PER_TRADE_PCT:.2f}%
-• Risk nominal     : {format_big_number(max(pullback["position"]["risk_amount"], breakout["position"]["risk_amount"]))}
-• Skenario pilih   : {"Pullback" if pullback["rr"] >= breakout["rr"] else "Breakout"}
-• Maks posisi      : {format_big_number(max(pullback["position"]["max_position_value"], breakout["position"]["max_position_value"]))}
-• Estimasi lot     : {max(pullback["position"]["max_lots"], breakout["position"]["max_lots"])} lot
+• Risk nominal     : {format_big_number(best_position["risk_amount"])}
+• Skenario pilih   : {best_name}
+• Maks posisi      : {format_big_number(best_position["max_position_value"])}
+• Estimasi lot     : {best_position["max_lots"]} lot
 
-7. Ringkasan
+7. Trade Management
+• {best_management[0]}
+• {best_management[1]}
+• {best_management[2]}
+
+8. Ringkasan
 • Harga saat ini : {format_price(close)}
 • Kesimpulan     : {final_conclusion}
 """
 
     meta = {
-        "setup_grade": setup_grade,
-        "avoid_trade": avoid_trade,
-        "rr_best": rr_best,
         "action_status": action_status,
-        "pullback": pullback,
-        "breakout": breakout,
+        "setup_grade": setup_grade,
+        "rr_best": rr_best,
         "pullback_confirmed": pullback_confirmed,
         "breakout_confirmed": breakout_confirmed,
+        "market_ok": market_filter["market_ok"],
+        "market_filter": market_filter,
+        "pullback": pullback,
+        "breakout": breakout,
     }
 
     if return_meta:
@@ -1079,7 +1227,7 @@ def _safe_float(value, default=0.0):
         return default
 
 
-def _analyze_screener_row(ticker: str, df: pd.DataFrame):
+def _analyze_screener_row(ticker: str, df: pd.DataFrame, market_ok=True):
     if df is None or df.empty:
         return None
 
@@ -1118,8 +1266,9 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
     volume_ok = volume_ratio >= SCREENER_MIN_VOLUME_RATIO
     return_ok = ret_1d > 0
     liquidity_ok = value_traded >= SCREENER_MIN_VALUE_TRADED
+    market_filter_ok = market_ok if USE_MARKET_FILTER else True
 
-    eligible = all([trend_ok, price_ok, volume_ok, return_ok, liquidity_ok])
+    eligible = all([trend_ok, price_ok, volume_ok, return_ok, liquidity_ok, market_filter_ok])
 
     normalized_volume = min(volume_ratio, 3.0) / 3.0
     normalized_ret = min(max(ret_1d, 0.0), 10.0) / 10.0
@@ -1156,6 +1305,7 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
         "RSI14": round(rsi14, 2),
         "MACD_Bullish": bool(macd > macd_signal),
         "Eligible": bool(eligible),
+        "Market_OK": bool(market_filter_ok),
         "Near_High_20_Pct": round(distance_to_high_20_pct, 2),
         "Score": round(score, 2),
     }
@@ -1203,6 +1353,9 @@ def screen_syariah_stocks(limit=None):
     if limit is None:
         limit = SCREENER_LIMIT
 
+    market_filter = get_market_filter_data()
+    market_ok = market_filter["market_ok"]
+
     tickers = load_syariah_universe()
     all_rows = []
 
@@ -1223,7 +1376,7 @@ def screen_syariah_stocks(limit=None):
                     )
 
                 prepared = _prepare_single_ticker_frame(one_df)
-                row = _analyze_screener_row(ticker, prepared)
+                row = _analyze_screener_row(ticker, prepared, market_ok=market_ok)
                 if row:
                     all_rows.append(row)
 
@@ -1251,20 +1404,26 @@ def screen_syariah_stocks(limit=None):
 
 
 def format_screener_telegram(df: pd.DataFrame, max_items: int = 10):
+    market_filter = get_market_filter_data()
+
     if df is None or df.empty:
         return (
             "📌 Screener Saham Syariah Trending\n\n"
+            f"Market filter: {market_filter['status']}\n\n"
             "Tidak ada saham yang lolos filter hari ini.\n"
             "Filter aktif:\n"
             "• Harga < 100\n"
             "• Volume > 1.5x rata-rata 20 hari\n"
             "• Return harian positif\n"
             "• Close > SMA20 > SMA50\n"
-            "• RSI dan MACD bullish"
+            "• RSI dan MACD bullish\n"
+            "• Market filter IHSG mendukung"
         )
 
     lines = [
         "📌 Screener Saham Syariah Trending",
+        "",
+        f"Market filter: {market_filter['status']}",
         "",
         "Kriteria:",
         "• Harga < 100",
@@ -1272,6 +1431,7 @@ def format_screener_telegram(df: pd.DataFrame, max_items: int = 10):
         "• Return harian positif",
         "• Close > SMA20 > SMA50",
         "• RSI dan MACD bullish",
+        "• Market filter IHSG mendukung",
         "",
     ]
 
@@ -1412,6 +1572,11 @@ def main():
     log(f"ACCOUNT_SIZE = {ACCOUNT_SIZE}")
     log(f"RISK_PER_TRADE_PCT = {RISK_PER_TRADE_PCT}")
     log(f"MAX_STOP_PCT = {MAX_STOP_PCT}")
+    log(f"BREAKOUT_BUFFER_PCT = {BREAKOUT_BUFFER_PCT}")
+    log(f"BREAKOUT_BUFFER_ABS = {BREAKOUT_BUFFER_ABS}")
+    log(f"PULLBACK_EXPIRY_DAYS = {PULLBACK_EXPIRY_DAYS}")
+    log(f"USE_MARKET_FILTER = {USE_MARKET_FILTER}")
+    log(f"MARKET_SYMBOL = {MARKET_SYMBOL}")
 
     try:
         if RUN_MODE == "screener_syariah":
