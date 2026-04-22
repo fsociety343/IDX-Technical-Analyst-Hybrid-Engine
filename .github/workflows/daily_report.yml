@@ -79,7 +79,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
-          RUN_MODE: screener_syariah
+          RUN_MODE: hybrid
           AI_PROVIDER: off
           ENABLE_AI_INSIGHT: "0"
 
