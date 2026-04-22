@@ -2,6 +2,8 @@ name: Daily Stock Analysis Report
 
 on:
   schedule:
+    # Setiap 1 jam saat jam bursa WIB (Senin-Jumat)
+    # WIB 09:00-16:00 = UTC 02:00-09:00
     - cron: '0 2-9 * * 1-5'
   workflow_dispatch:
 
@@ -32,17 +34,23 @@ jobs:
           touch data/syariah_stocks.txt
           touch data/syariah_stocks_master.txt
 
-      - name: Debug environment
-        run: |
-          echo "RUN_MODE=$RUN_MODE"
-          echo "WATCHLIST_FILE=$WATCHLIST_FILE"
-          echo "SYARIAH_UNIVERSE_FILE=$SYARIAH_UNIVERSE_FILE"
-          echo "SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE=$SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE"
+      - name: Debug runtime config
         env:
           RUN_MODE: screener_syariah
           WATCHLIST_FILE: data/saham_pantauan.txt
           SYARIAH_UNIVERSE_FILE: data/syariah_stocks.txt
+          SYARIAH_MASTER_FILE: data/syariah_stocks_master.txt
+          DES_PDF_LOCAL: data/des_syariah_latest.pdf
+          SCREENER_MAX_PRICE: "100"
           SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
+        run: |
+          echo "RUN_MODE=$RUN_MODE"
+          echo "WATCHLIST_FILE=$WATCHLIST_FILE"
+          echo "SYARIAH_UNIVERSE_FILE=$SYARIAH_UNIVERSE_FILE"
+          echo "SYARIAH_MASTER_FILE=$SYARIAH_MASTER_FILE"
+          echo "DES_PDF_LOCAL=$DES_PDF_LOCAL"
+          echo "SCREENER_MAX_PRICE=$SCREENER_MAX_PRICE"
+          echo "SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE=$SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE"
 
       - name: Run stock bot
         env:
@@ -71,6 +79,7 @@ jobs:
           SCREENER_DELAY_SECONDS: "1.0"
           SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
 
+          MIN_ACCEPTABLE_RR: "1.2"
           INCIDENTAL_ADDITIONS: "BSAI"
           EXCLUDED_CODES: "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE"
 
