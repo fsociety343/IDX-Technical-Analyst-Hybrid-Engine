@@ -50,7 +50,12 @@ SCREENER_MIN_RSI = float(os.environ.get("SCREENER_MIN_RSI", "55"))
 SCREENER_BATCH_SIZE = int(os.environ.get("SCREENER_BATCH_SIZE", "40"))
 SCREENER_DELAY_SECONDS = float(os.environ.get("SCREENER_DELAY_SECONDS", "1.0"))
 SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE = os.environ.get("SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE", "1").strip() == "1"
+
 MIN_ACCEPTABLE_RR = float(os.environ.get("MIN_ACCEPTABLE_RR", "1.2"))
+ACCOUNT_SIZE = float(os.environ.get("ACCOUNT_SIZE", "3000000"))
+RISK_PER_TRADE_PCT = float(os.environ.get("RISK_PER_TRADE_PCT", "1"))
+MAX_STOP_PCT = float(os.environ.get("MAX_STOP_PCT", "5"))
+MAX_STOP_DECIMAL = MAX_STOP_PCT / 100.0
 
 INCIDENTAL_ADDITIONS = [x.strip().upper() for x in os.environ.get("INCIDENTAL_ADDITIONS", "BSAI").split(",") if x.strip()]
 EXCLUDED_CODES = {x.strip().upper() for x in os.environ.get("EXCLUDED_CODES", "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE").split(",") if x.strip()}
@@ -119,6 +124,13 @@ def format_big_number(value):
     if abs_val >= 1_000:
         return f"{value / 1_000:.2f}K"
     return f"{value:.0f}"
+
+
+def format_percent(value):
+    try:
+        return f"{float(value):.2f}%"
+    except Exception:
+        return str(value)
 
 
 def chunk_message(text: str, limit: int = 3900):
@@ -232,18 +244,56 @@ def rr_quality_label(rr_value):
     return "Kurang menarik"
 
 
-def get_setup_grade(trend_bias, breakout_valid, volume, vol_sma20, rr2):
-    if breakout_valid and volume > vol_sma20 * 1.5 and rr2 >= 2:
-        return "A"
-    if trend_bias.startswith("Bullish") and rr2 >= 1.5:
-        return "B"
-    if rr2 >= 1:
+def get_setup_grade(action_status, rr_best, breakout_confirmed, pullback_confirmed):
+    if action_status == "ENTRY READY":
+        if rr_best >= 2 and (breakout_confirmed or pullback_confirmed):
+            return "A"
+        if rr_best >= 1.5:
+            return "B"
+        return "C"
+    if action_status == "WAIT FOR TRIGGER":
         return "C"
     return "Avoid"
 
 
-def should_avoid_trade(setup_grade, rr2):
-    return setup_grade == "Avoid" or rr2 < MIN_ACCEPTABLE_RR
+def calculate_position_size(entry, stop, account_size=ACCOUNT_SIZE, risk_pct=RISK_PER_TRADE_PCT):
+    try:
+        entry = float(entry)
+        stop = float(stop)
+        account_size = float(account_size)
+        risk_pct = float(risk_pct)
+    except Exception:
+        return {
+            "risk_amount": 0,
+            "risk_per_share": 0,
+            "max_position_value": 0,
+            "max_shares": 0,
+            "max_lots": 0,
+        }
+
+    risk_amount = account_size * (risk_pct / 100.0)
+    risk_per_share = max(entry - stop, 0)
+
+    if risk_per_share <= 0 or entry <= 0:
+        return {
+            "risk_amount": round(risk_amount, 2),
+            "risk_per_share": 0,
+            "max_position_value": 0,
+            "max_shares": 0,
+            "max_lots": 0,
+        }
+
+    max_shares = int(risk_amount // risk_per_share)
+    max_lots = max_shares // 100
+    max_position_value = max_shares * entry
+
+    return {
+        "risk_amount": round(risk_amount, 2),
+        "risk_per_share": round(risk_per_share, 2),
+        "max_position_value": round(max_position_value, 2),
+        "max_shares": int(max_shares),
+        "max_lots": int(max_lots),
+    }
 
 
 # =========================================================
@@ -398,7 +448,6 @@ def detect_market_phase(data):
     ma10 = data["MA10"]
     ma20 = data["MA20"]
     ma50 = data["MA50"]
-    ma200 = data["MA200"]
     close = data["Close Price"]
     vol = data["Volume"]
     vol_sma20 = data["Volume_SMA_20"]
@@ -417,8 +466,7 @@ def detect_market_phase(data):
         return "Konsolidasi dalam uptrend"
     elif close < ma20 and vol < vol_sma20:
         return "Sideways / distribusi ringan"
-    else:
-        return "Transisi"
+    return "Transisi"
 
 
 def get_support_resistance_levels(df, close_price):
@@ -498,6 +546,9 @@ def get_technical_data(ticker):
         df.ta.mfi(length=14, append=True)
 
         df["VOL_SMA_20"] = df["Volume"].rolling(window=20).mean()
+        df["HIGH_20"] = df["High"].rolling(20).max()
+        df["LOW_20"] = df["Low"].rolling(20).min()
+        df["ATR_14"] = ta.atr(df["High"], df["Low"], df["Close"], length=14)
         df = df.dropna().copy()
 
         if df.empty or len(df) < 30:
@@ -507,7 +558,16 @@ def get_technical_data(ticker):
         prev = df.iloc[-2]
 
         close_price = round(float(latest["Close"]), 2)
+        open_price = round(float(latest["Open"]), 2)
+        high_price = round(float(latest["High"]), 2)
+        low_price = round(float(latest["Low"]), 2)
+        prev_close = round(float(prev["Close"]), 2)
+        prev_open = round(float(prev["Open"]), 2)
+        prev_high = round(float(prev["High"]), 2)
+        prev_low = round(float(prev["Low"]), 2)
+
         volume = float(latest["Volume"]) if pd.notna(latest["Volume"]) else 0
+        prev_volume = float(prev["Volume"]) if pd.notna(prev["Volume"]) else 0
         vol_sma20 = float(latest["VOL_SMA_20"]) if pd.notna(latest["VOL_SMA_20"]) else 0
 
         ma10 = get_safe_value(latest, "SMA_10")
@@ -524,6 +584,7 @@ def get_technical_data(ticker):
         bb_upper = get_safe_value(latest, "BBU_")
         bb_lower = get_safe_value(latest, "BBL_")
         mfi14 = get_safe_value(latest, "MFI_14")
+        atr14 = round(float(latest["ATR_14"]), 2) if pd.notna(latest["ATR_14"]) else 0.0
 
         price_structure, structure_flag = get_price_structure(df)
         sr_levels = get_support_resistance_levels(df, close_price)
@@ -545,6 +606,13 @@ def get_technical_data(ticker):
         data_summary = {
             "Ticker": ticker,
             "Close Price": close_price,
+            "Open Price": open_price,
+            "High Price": high_price,
+            "Low Price": low_price,
+            "Prev Close": prev_close,
+            "Prev Open": prev_open,
+            "Prev High": prev_high,
+            "Prev Low": prev_low,
             "MA10": ma10,
             "MA20": ma20,
             "MA50": ma50,
@@ -557,8 +625,10 @@ def get_technical_data(ticker):
             "BB_Upper": bb_upper,
             "BB_Lower": bb_lower,
             "Volume": int(volume),
+            "Prev Volume": int(prev_volume),
             "Volume_SMA_20": int(vol_sma20),
             "MFI_14": mfi14,
+            "ATR_14": atr14,
             "Market_Phase": market_phase,
             "Price_Structure": price_structure,
             "Structure_Flag": structure_flag,
@@ -573,14 +643,132 @@ def get_technical_data(ticker):
 
 
 # =========================================================
-# REPORT RULE-BASED (REVISI PENUH)
+# TRIGGER & SCENARIO ENGINE
+# =========================================================
+def detect_bullish_candle_signal(data):
+    close = data["Close Price"]
+    open_ = data["Open Price"]
+    high = data["High Price"]
+    low = data["Low Price"]
+    prev_close = data["Prev Close"]
+    prev_open = data["Prev Open"]
+
+    candle_range = max(high - low, 0.01)
+    body = abs(close - open_)
+    lower_wick = min(open_, close) - low
+    hammer_like = lower_wick >= body * 1.5 and body / candle_range <= 0.45
+    bullish_body = close > open_
+    bullish_engulfing_like = close > prev_open and open_ <= prev_close and close > open_ and prev_close < prev_open
+    recovery_close = close > prev_close
+
+    return hammer_like or bullish_engulfing_like or (bullish_body and recovery_close)
+
+
+def detect_pullback_trigger(data, support_area):
+    close = data["Close Price"]
+    low = data["Low Price"]
+    prev_close = data["Prev Close"]
+    volume = data["Volume"]
+    prev_volume = data["Prev Volume"]
+
+    near_support = low <= support_area * 1.02 or close <= support_area * 1.03
+    candle_ok = detect_bullish_candle_signal(data)
+    volume_ok = volume > prev_volume or volume > data["Volume_SMA_20"]
+    rebound_ok = close > prev_close
+
+    return near_support and candle_ok and volume_ok and rebound_ok
+
+
+def detect_breakout_trigger(data, breakout_level):
+    close = data["Close Price"]
+    high = data["High Price"]
+    volume = data["Volume"]
+    vol_sma20 = data["Volume_SMA_20"]
+
+    close_break = close > breakout_level
+    high_break = high > breakout_level
+    volume_spike = volume > vol_sma20 * 1.2
+
+    return (close_break or high_break) and volume_spike
+
+
+def build_trade_scenarios(data):
+    close = data["Close Price"]
+    ma10 = data["MA10"]
+    ma20 = data["MA20"]
+    atr = max(data["ATR_14"], 0.01)
+    s1 = data["support_1"]
+    s2 = data["support_2"]
+    r1 = data["resistance_1"]
+    r2 = data["resistance_2"]
+    r3 = data["resistance_3"]
+
+    # Pullback scenario
+    pullback_area = round(max(ma20, s1), 2)
+    pullback_entry = pullback_area
+    structural_pullback_sl = min(s1 * 0.99, pullback_entry - atr * 0.8)
+    max_allowed_pullback_sl = pullback_entry * (1 - MAX_STOP_DECIMAL)
+    pullback_sl = round(max(structural_pullback_sl, max_allowed_pullback_sl), 2)
+    if pullback_sl >= pullback_entry:
+        pullback_sl = round(pullback_entry * (1 - min(MAX_STOP_DECIMAL, 0.04)), 2)
+    pullback_tp1 = round(max(r1, pullback_entry * 1.05), 2)
+    pullback_tp2 = round(max(r2, pullback_entry * 1.10), 2)
+    pullback_rr = calc_rr(pullback_entry, pullback_sl, pullback_tp2)
+    pullback_trigger_ready = detect_pullback_trigger(data, pullback_area)
+
+    # Breakout scenario
+    breakout_level = round(max(r1, close), 2)
+    breakout_entry = round(max(breakout_level, close), 2)
+    structural_breakout_sl = min(ma10, ma20, breakout_level * 0.97, breakout_entry - atr)
+    max_allowed_breakout_sl = breakout_entry * (1 - MAX_STOP_DECIMAL)
+    breakout_sl = round(max(structural_breakout_sl, max_allowed_breakout_sl), 2)
+    if breakout_sl >= breakout_entry:
+        breakout_sl = round(breakout_entry * (1 - min(MAX_STOP_DECIMAL, 0.04)), 2)
+    breakout_tp1 = round(max(r2, breakout_entry * 1.04), 2)
+    breakout_tp2 = round(max(r3, breakout_entry * 1.08), 2)
+    breakout_rr = calc_rr(breakout_entry, breakout_sl, breakout_tp2)
+    breakout_trigger_ready = detect_breakout_trigger(data, breakout_level)
+
+    pullback_pos = calculate_position_size(pullback_entry, pullback_sl)
+    breakout_pos = calculate_position_size(breakout_entry, breakout_sl)
+
+    pullback = {
+        "name": "Pullback Entry",
+        "area": round(pullback_area, 2),
+        "trigger_text": "Bullish candle + rebound + volume naik",
+        "trigger_ready": pullback_trigger_ready,
+        "entry": round(pullback_entry, 2),
+        "sl": round(pullback_sl, 2),
+        "tp1": round(pullback_tp1, 2),
+        "tp2": round(pullback_tp2, 2),
+        "rr": round(pullback_rr, 2),
+        "position": pullback_pos,
+    }
+
+    breakout = {
+        "name": "Breakout Entry",
+        "area": round(breakout_level, 2),
+        "trigger_text": "Breakout + volume spike",
+        "trigger_ready": breakout_trigger_ready,
+        "entry": round(breakout_entry, 2),
+        "sl": round(breakout_sl, 2),
+        "tp1": round(breakout_tp1, 2),
+        "tp2": round(breakout_tp2, 2),
+        "rr": round(breakout_rr, 2),
+        "position": breakout_pos,
+    }
+
+    return pullback, breakout
+
+
+# =========================================================
+# REPORT RULE-BASED (LEVEL PRO)
 # =========================================================
 def generate_python_logic_report(data, return_meta=False):
     close = data["Close Price"]
     ma10 = data["MA10"]
     ma20 = data["MA20"]
     ma50 = data["MA50"]
-    ma200 = data["MA200"]
     rsi = data["RSI_14"]
     macd = data["MACD"]
     macd_signal = data["MACD_Signal"]
@@ -589,7 +777,7 @@ def generate_python_logic_report(data, return_meta=False):
     bb_upper = data["BB_Upper"]
     bb_lower = data["BB_Lower"]
     volume = data["Volume"]
-    vol_sma20 = data["Volume_SMA_20"]
+    vol_sma20 = max(data["Volume_SMA_20"], 1)
     mfi = data["MFI_14"]
 
     s1 = data["support_1"]
@@ -625,227 +813,150 @@ def generate_python_logic_report(data, return_meta=False):
         trend_condition = "Sideways / transisi"
         trend_bias = "Netral"
 
-    if close > ma10 and close > ma20 and close > ma50:
-        ma_position = "Di atas MA pendek, menengah, dan panjang menengah"
-    elif close > ma10 and close > ma20:
-        ma_position = "Di atas MA pendek dan menengah"
-    elif close < ma10 and close < ma20 and close < ma50:
-        ma_position = "Di bawah MA pendek, menengah, dan panjang menengah"
-    else:
-        ma_position = "Posisi harga campuran terhadap MA"
-
-    if ma10 > ma20 > ma50:
-        ma_order = "MA10 > MA20 > MA50"
-        ma_structure = "Bullish alignment"
-    elif ma10 < ma20 < ma50:
-        ma_order = "MA10 < MA20 < MA50"
-        ma_structure = "Bearish alignment"
-    else:
-        ma_order = "Susunan MA campuran"
-        ma_structure = "Belum ada alignment dominan"
-
     if close > bb_upper:
-        bb_text = "Harga menembus upper band"
-        bb_signal = "Momentum sangat kuat, rawan jenuh jangka pendek"
+        condition_text = "Overextended / breakout kuat"
+    elif rsi >= 75:
+        condition_text = "Bullish panas / rawan pullback sehat"
+    elif bullish_ma_alignment:
+        condition_text = "Bullish sehat"
     elif close < bb_lower:
-        bb_text = "Harga menembus lower band"
-        bb_signal = "Tekanan jual sangat kuat"
+        condition_text = "Tekanan jual tinggi"
     else:
-        bb_text = "Harga bergerak di dalam Bollinger Band"
-        bb_signal = "Momentum normal"
-
-    if rsi >= 80:
-        rsi_signal = f"RSI ±{round(rsi)} → sangat panas, rawan pullback"
-    elif rsi >= 70:
-        rsi_signal = f"RSI ±{round(rsi)} → bullish kuat, mulai jenuh"
-    elif rsi >= 60:
-        rsi_signal = f"RSI ±{round(rsi)} → bullish sehat"
-    elif rsi <= 30:
-        rsi_signal = f"RSI ±{round(rsi)} → oversold / potensi rebound"
-    else:
-        rsi_signal = f"RSI ±{round(rsi)} → netral"
+        condition_text = "Netral / menunggu konfirmasi"
 
     if macd > macd_signal and macd_hist > prev_macd_hist:
-        macd_signal_text = "Golden cross + histogram menguat → momentum bullish mengembang"
+        macd_signal_text = "Golden cross + histogram menguat"
     elif macd > macd_signal:
-        macd_signal_text = "Golden cross → bullish"
+        macd_signal_text = "Golden cross"
     elif macd < macd_signal and macd_hist < prev_macd_hist:
-        macd_signal_text = "Dead cross + histogram melemah → bearish"
+        macd_signal_text = "Dead cross + histogram melemah"
     else:
         macd_signal_text = "MACD campuran"
 
     if volume > vol_sma20 * 2:
-        volume_signal = "Volume melonjak sangat besar → akumulasi / breakout participation kuat"
+        volume_signal = "Volume melonjak sangat besar"
     elif volume > vol_sma20 * 1.5:
-        volume_signal = "Volume tinggi → partisipasi beli meningkat"
+        volume_signal = "Volume tinggi"
     elif volume > vol_sma20:
         volume_signal = "Volume di atas rata-rata"
     else:
         volume_signal = "Volume normal / belum kuat"
 
     if mfi >= 85:
-        mfi_signal = f"MFI ±{round(mfi)} → dana masuk sangat kuat, rawan profit taking jangka pendek"
+        mfi_signal = f"MFI ±{round(mfi)} → dana masuk sangat kuat, rawan profit taking"
     elif mfi >= 65:
         mfi_signal = f"MFI ±{round(mfi)} → dana masuk kuat"
     elif mfi <= 20:
-        mfi_signal = f"MFI ±{round(mfi)} → dana lemah, potensi technical rebound"
+        mfi_signal = f"MFI ±{round(mfi)} → dana lemah, potensi rebound"
     else:
         mfi_signal = f"MFI ±{round(mfi)} → dana moderat"
 
-    if breakout_valid:
-        aggressive_entry = close
-        moderate_entry = max(r1 * 0.98, ma10, ma20)
-        deep_entry = s1
-        setup_type = "Breakout / continuation"
+    if rsi >= 80:
+        rsi_signal = f"RSI ±{round(rsi)} → sangat panas"
+    elif rsi >= 70:
+        rsi_signal = f"RSI ±{round(rsi)} → bullish kuat"
+    elif rsi >= 60:
+        rsi_signal = f"RSI ±{round(rsi)} → bullish sehat"
+    elif rsi <= 30:
+        rsi_signal = f"RSI ±{round(rsi)} → oversold"
+    else:
+        rsi_signal = f"RSI ±{round(rsi)} → netral"
+
+    pullback, breakout = build_trade_scenarios(data)
+
+    rr_best = max(pullback["rr"], breakout["rr"])
+    rr_status = rr_quality_label(rr_best)
+
+    pullback_confirmed = pullback["trigger_ready"] and pullback["rr"] >= MIN_ACCEPTABLE_RR
+    breakout_confirmed = breakout["trigger_ready"] and breakout["rr"] >= MIN_ACCEPTABLE_RR
+
+    if breakout_confirmed or pullback_confirmed:
+        action_status = "ENTRY READY"
     elif trend_bias.startswith("Bullish"):
-        aggressive_entry = max(ma10, close * 0.985)
-        moderate_entry = max(ma20, s1)
-        deep_entry = s2
-        setup_type = "Pullback trend following"
+        action_status = "WAIT FOR TRIGGER"
     else:
-        aggressive_entry = s1
-        moderate_entry = s2
-        deep_entry = s3
-        setup_type = "Mean reversion / sideways trade"
+        action_status = "SKIP"
 
-    aggressive_entry = round(min(aggressive_entry, close), 2) if breakout_valid else round(aggressive_entry, 2)
-    moderate_entry = round(moderate_entry, 2)
-    deep_entry = round(deep_entry, 2)
+    setup_grade = get_setup_grade(action_status, rr_best, breakout_confirmed, pullback_confirmed)
+    avoid_trade = action_status == "SKIP"
 
-    if breakout_valid:
-        sl_agresif = round(min(ma20, r1 * 0.97, s1), 2)
-        sl_moderat = round(min(s1, ma20 * 0.98), 2)
-    elif trend_bias.startswith("Bullish"):
-        sl_agresif = round(min(s1, ma20 * 0.98), 2)
-        sl_moderat = round(min(s2, ma50 * 0.98), 2)
+    if action_status == "ENTRY READY":
+        if breakout_confirmed and breakout["rr"] >= pullback["rr"]:
+            preferred = breakout
+            preferred_label = "Breakout Entry"
+        else:
+            preferred = pullback
+            preferred_label = "Pullback Entry"
+        final_conclusion = f"Setup siap dieksekusi pada skenario {preferred_label} dengan RR {preferred['rr']}."
+    elif action_status == "WAIT FOR TRIGGER":
+        if trend_bias.startswith("Bullish"):
+            final_conclusion = "Trend masih bullish, tetapi entry belum valid. Tunggu trigger konfirmasi agar RR membaik."
+        else:
+            final_conclusion = "Belum ada edge kuat. Tunggu trigger baru."
     else:
-        sl_agresif = round(s1, 2)
-        sl_moderat = round(s2, 2)
-
-    if sl_agresif >= aggressive_entry:
-        sl_agresif = round(aggressive_entry * 0.97, 2)
-    if sl_moderat >= moderate_entry:
-        sl_moderat = round(moderate_entry * 0.95, 2)
-
-    tp1 = round(r1, 2)
-    tp2 = round(r2, 2)
-    tp3 = round(r3, 2)
-
-    rr1 = calc_rr(aggressive_entry, sl_agresif, tp1)
-    rr2 = calc_rr(aggressive_entry, sl_agresif, tp2)
-    rr3 = calc_rr(aggressive_entry, sl_agresif, tp3)
-
-    rr_quality = rr_quality_label(rr2)
-    setup_grade = get_setup_grade(trend_bias, breakout_valid, volume, vol_sma20, rr2)
-    avoid_trade = should_avoid_trade(setup_grade, rr2)
-
-    if avoid_trade:
-        entry_plan = (
-            f"Setup teknikal ada, tetapi entry di harga sekarang kurang ideal. "
-            f"Tunggu pullback sehat ke area {format_price(moderate_entry)} atau base baru yang memperbaiki risk-reward."
-        )
-        action_plan = "AVOID / WAIT. Jangan kejar harga bila RR belum memenuhi standar."
-    elif breakout_valid and rr2 >= MIN_ACCEPTABLE_RR:
-        entry_plan = (
-            f"Buy on strength masih layak selama harga bertahan di atas area {format_price(r1)} "
-            f"atau tunggu retest sehat ke area {format_price(moderate_entry)}."
-        )
-        action_plan = "Masih layak diikuti, tetapi hindari entry terlalu jauh dari area breakout."
-    elif trend_bias.startswith("Bullish") and rr2 >= 1.5:
-        entry_plan = (
-            f"Prioritas entry saat pullback sehat ke area {format_price(moderate_entry)}. "
-            f"Entry agresif bisa dipertimbangkan selama harga belum breakdown dari {format_price(sl_agresif)}."
-        )
-        action_plan = "Layak trading buy on weakness / buy on retest."
-    elif trend_bias.startswith("Bullish") and rr2 >= MIN_ACCEPTABLE_RR:
-        entry_plan = (
-            f"Trend masih bullish, tetapi entry terbaik ada di area pullback {format_price(moderate_entry)}. "
-            f"Kurangi agresivitas bila harga sudah terlalu dekat resistance."
-        )
-        action_plan = "Selektif. Boleh entry bertahap, jangan full di harga atas."
-    elif trend_bias.startswith("Bearish"):
-        entry_plan = "Belum ideal untuk entry buy agresif. Tunggu reversal valid."
-        action_plan = "Defensif. Hindari kejar harga."
-    else:
-        entry_plan = (
-            f"Trading cepat hanya jika ada pantulan valid di area {format_price(s1)} "
-            f"atau breakout meyakinkan di atas {format_price(r1)}."
-        )
-        action_plan = "Netral. Tunggu konfirmasi arah."
-
-    if avoid_trade:
-        final_conclusion = "Setup belum layak dieksekusi karena risk-reward tidak memenuhi standar sehat."
-    elif breakout_valid and bullish_ma_alignment and bullish_macd and bullish_volume:
-        final_conclusion = "Bullish continuation / early trend. Momentum valid dan tidak layak disebut netral."
-    elif trend_bias.startswith("Bullish"):
-        final_conclusion = "Bias bullish masih dominan, dengan entry terbaik saat pullback sehat."
-    elif trend_bias.startswith("Bearish"):
-        final_conclusion = "Trend bearish masih dominan. Fokus proteksi risiko."
-    else:
-        final_conclusion = "Belum ada edge kuat. Tunggu konfirmasi baru."
+        final_conclusion = "Setup tidak layak untuk sekarang. Fokus proteksi modal."
 
     report = f"""📊 ANALISIS TEKNIKAL — ${denormalize_ticker(data["Ticker"])} (Daily)
 
-1. Tren Utama
-• Kondisi : {trend_condition}
-• Bias    : {trend_bias}
-• Fase    : {phase_text}
-• Struktur: {data["Price_Structure"]}
+1. Decision Engine
+• Trend      : {trend_condition}
+• Kondisi    : {condition_text}
+• RR Status  : {rr_status}
+• Action     : {action_status}
+• Grade      : {setup_grade}
 
-2. Moving Average
-• Posisi harga : {ma_position}
-• Susunan MA   : {ma_order}
-• Struktur MA  : {ma_structure}
+2. Konteks Teknikal
+• Fase       : {phase_text}
+• Struktur   : {data["Price_Structure"]}
+• RSI        : {rsi_signal}
+• MACD       : {macd_signal_text}
+• Volume     : {volume_signal} ({format_big_number(volume)} vs avg20 {format_big_number(vol_sma20)})
+• MFI        : {mfi_signal}
 
-3. Momentum
-• Bollinger : {bb_text} → {bb_signal}
-• RSI       : {rsi_signal}
-• MACD      : {macd_signal_text}
+3. Support / Resistance
+• Support    : {format_price(s1)} | {format_price(s2)} | {format_price(s3)}
+• Resistance : {format_price(r1)} | {format_price(r2)} | {format_price(r3)}
 
-4. Volume & Dana
-• Volume    : {format_big_number(volume)} vs avg20 {format_big_number(vol_sma20)}
-• Sinyal    : {volume_signal}
-• MFI       : {mfi_signal}
+4. Skenario Pullback Entry
+• Area       : {format_price(pullback["area"])}
+• Trigger    : {pullback["trigger_text"]}
+• Status     : {"VALID" if pullback["trigger_ready"] else "WAIT"}
+• Entry      : {format_price(pullback["entry"])}
+• SL         : {format_price(pullback["sl"])}
+• TP         : {format_price(pullback["tp1"])} | {format_price(pullback["tp2"])}
+• RR         : {pullback["rr"]}
 
-5. Support / Resistance
-• Support   : {format_price(s1)} | {format_price(s2)} | {format_price(s3)}
-• Resistance: {format_price(r1)} | {format_price(r2)} | {format_price(r3)}
+5. Skenario Breakout Entry
+• Area       : > {format_price(breakout["area"])}
+• Trigger    : {breakout["trigger_text"]}
+• Status     : {"VALID" if breakout["trigger_ready"] else "WAIT"}
+• Entry      : {format_price(breakout["entry"])}
+• SL         : {format_price(breakout["sl"])}
+• TP         : {format_price(breakout["tp1"])} | {format_price(breakout["tp2"])}
+• RR         : {breakout["rr"]}
 
-6. Trading Plan
-• Tipe setup    : {setup_type}
-• Entry agresif : {format_price(aggressive_entry)}
-• Entry moderat : {format_price(moderate_entry)}
-• Entry dalam   : {format_price(deep_entry)}
-• TP            : {format_price(tp1)} | {format_price(tp2)} | {format_price(tp3)}
-• SL agresif    : {format_price(sl_agresif)}
-• SL moderat    : {format_price(sl_moderat)}
+6. Position Sizing (Skenario Terbaik)
+• Modal            : {format_big_number(ACCOUNT_SIZE)}
+• Risk per trade   : {RISK_PER_TRADE_PCT:.2f}%
+• Risk nominal     : {format_big_number(max(pullback["position"]["risk_amount"], breakout["position"]["risk_amount"]))}
+• Skenario pilih   : {"Pullback" if pullback["rr"] >= breakout["rr"] else "Breakout"}
+• Maks posisi      : {format_big_number(max(pullback["position"]["max_position_value"], breakout["position"]["max_position_value"]))}
+• Estimasi lot     : {max(pullback["position"]["max_lots"], breakout["position"]["max_lots"])} lot
 
-7. Risk Reward
-• RR ke TP1 : {rr1}
-• RR ke TP2 : {rr2}
-• RR ke TP3 : {rr3}
-• Kualitas  : {rr_quality}
-
-8. Setup Rating
-• Grade     : {setup_grade}
-• Status    : {"AVOID" if avoid_trade else "LAYAK DIPANTAU"}
-
-9. Actionable Strategy
-• Entry plan : {entry_plan}
-• Aksi       : {action_plan}
-
-10. Ringkasan
+7. Ringkasan
 • Harga saat ini : {format_price(close)}
 • Kesimpulan     : {final_conclusion}
 """
+
     meta = {
         "setup_grade": setup_grade,
         "avoid_trade": avoid_trade,
-        "rr1": rr1,
-        "rr2": rr2,
-        "rr3": rr3,
-        "trend_bias": trend_bias,
-        "breakout_valid": breakout_valid,
+        "rr_best": rr_best,
+        "action_status": action_status,
+        "pullback": pullback,
+        "breakout": breakout,
+        "pullback_confirmed": pullback_confirmed,
+        "breakout_confirmed": breakout_confirmed,
     }
 
     if return_meta:
@@ -862,9 +973,9 @@ def generate_ai_insight(data, python_report):
 
     prompt = f"""
 Anda adalah analis teknikal saham Indonesia.
-Berdasarkan data berikut, buat insight singkat maksimal 6 poin.
-Fokus: tren, momentum, risiko, entry, TP, SL.
-Jangan ulangi semua isi report Python, cukup tambahkan insight bernilai.
+Berdasarkan data berikut, buat insight singkat maksimal 5 poin.
+Fokus: trend, momentum, trigger entry, risiko, dan manajemen posisi.
+Jangan mengulang isi report Python.
 
 Data:
 {data}
@@ -946,13 +1057,10 @@ def _prepare_single_ticker_frame(df: pd.DataFrame) -> pd.DataFrame:
 
     df["MACD"] = macd["MACD_12_26_9"]
     df["MACD_SIGNAL"] = macd["MACDs_12_26_9"]
-    df["MACD_HIST"] = macd["MACDh_12_26_9"]
-
     df["VOL_SMA20"] = df["Volume"].rolling(20).mean()
     df["RET_1D_PCT"] = df["Close"].pct_change() * 100
     df["VALUE_TRADED"] = df["Close"] * df["Volume"]
     df["HIGH_20"] = df["High"].rolling(20).max()
-    df["LOW_20"] = df["Low"].rolling(20).min()
     df["SMA20_SLOPE_5"] = df["SMA20"].diff(5)
 
     df = df.dropna().copy()
@@ -990,7 +1098,6 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
     macd = _safe_float(last["MACD"])
     macd_signal = _safe_float(last["MACD_SIGNAL"])
     high_20 = _safe_float(last["HIGH_20"])
-    low_20 = _safe_float(last["LOW_20"])
     sma20_slope_5 = _safe_float(last["SMA20_SLOPE_5"])
 
     if close <= 0 or vol_sma20 <= 0:
@@ -998,7 +1105,6 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
 
     volume_ratio = volume / vol_sma20 if vol_sma20 > 0 else 0.0
     distance_to_high_20_pct = ((close / high_20) - 1) * 100 if high_20 > 0 else 0.0
-    rebound_from_low_20_pct = ((close / low_20) - 1) * 100 if low_20 > 0 else 0.0
 
     trend_ok = (
         close > sma20 and
@@ -1018,7 +1124,6 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
     normalized_volume = min(volume_ratio, 3.0) / 3.0
     normalized_ret = min(max(ret_1d, 0.0), 10.0) / 10.0
     normalized_liquidity = min(value_traded / 10_000_000_000, 1.0)
-
     trend_strength = sum([
         close > sma20,
         sma20 > sma50,
@@ -1026,7 +1131,6 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
         macd > macd_signal,
         sma20_slope_5 > 0,
     ]) / 5.0
-
     breakout_proximity = min(close / high_20, 1.0) if high_20 > 0 else 0.0
 
     score = (
@@ -1051,14 +1155,8 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame):
         "SMA50": round(sma50, 2),
         "RSI14": round(rsi14, 2),
         "MACD_Bullish": bool(macd > macd_signal),
-        "Trend_OK": bool(trend_ok),
-        "Price_OK": bool(price_ok),
-        "Volume_OK": bool(volume_ok),
-        "Return_OK": bool(return_ok),
-        "Liquidity_OK": bool(liquidity_ok),
         "Eligible": bool(eligible),
         "Near_High_20_Pct": round(distance_to_high_20_pct, 2),
-        "Rebound_From_Low_20_Pct": round(rebound_from_low_20_pct, 2),
         "Score": round(score, 2),
     }
 
@@ -1201,7 +1299,7 @@ def format_screener_telegram(df: pd.DataFrame, max_items: int = 10):
 def build_final_report(data):
     python_report, meta = generate_python_logic_report(data, return_meta=True)
 
-    if should_avoid_trade(meta["setup_grade"], meta["rr2"]):
+    if meta["action_status"] == "SKIP":
         return python_report
 
     ai_text = generate_ai_insight(data, python_report)
@@ -1311,6 +1409,9 @@ def main():
     log(f"SYARIAH_UNIVERSE_FILE = {SYARIAH_UNIVERSE_FILE}")
     log(f"SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE = {SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE}")
     log(f"SCREENER_MAX_PRICE = {SCREENER_MAX_PRICE}")
+    log(f"ACCOUNT_SIZE = {ACCOUNT_SIZE}")
+    log(f"RISK_PER_TRADE_PCT = {RISK_PER_TRADE_PCT}")
+    log(f"MAX_STOP_PCT = {MAX_STOP_PCT}")
 
     try:
         if RUN_MODE == "screener_syariah":
