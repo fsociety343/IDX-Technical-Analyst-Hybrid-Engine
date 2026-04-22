@@ -2,12 +2,26 @@ name: Daily Stock Analysis Report
 
 on:
   schedule:
-    # Senin-Jumat jam 08:00 WIB = 01:00 UTC
-    - cron: '0 1 * * 1-5'
-    # Senin-Jumat jam 12:00 WIB = 05:00 UTC
-    - cron: '0 5 * * 1-5'
-    # Senin-Jumat jam 16:00 WIB = 09:00 UTC
-    - cron: '0 9 * * 1-5'
+    # Senin-Kamis, Sesi I: 09:00, 09:30, 10:00, 10:30, 11:00, 11:30 WIB
+    - cron: '0,30 9-11 * * 1-4'
+      timezone: 'Asia/Jakarta'
+
+    # Senin-Kamis, Sesi II: 13:30, 14:00, 14:30, 15:00, 15:30 WIB
+    - cron: '0,30 14-15 * * 1-4'
+      timezone: 'Asia/Jakarta'
+    - cron: '30 13 * * 1-4'
+      timezone: 'Asia/Jakarta'
+
+    # Jumat, Sesi I: 09:00, 09:30, 10:00, 10:30, 11:00, 11:30 WIB
+    - cron: '0,30 9-10 * * 5'
+      timezone: 'Asia/Jakarta'
+    - cron: '0,30 11 * * 5'
+      timezone: 'Asia/Jakarta'
+
+    # Jumat, Sesi II: 14:00, 14:30, 15:00, 15:30 WIB
+    - cron: '0,30 14-15 * * 5'
+      timezone: 'Asia/Jakarta'
+
   workflow_dispatch:
 
 jobs:
@@ -16,7 +30,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Python 3.12
@@ -25,49 +39,15 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Prepare data directory
-        run: |
-          mkdir -p data
-          touch data/saham_pantauan.txt
-          touch data/syariah_stocks.txt
-          touch data/syariah_stocks_master.txt
-
-      - name: Run stock bot
+      - name: Execute Analysis Script
         env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-
-          RUN_MODE: screener_syariah
-          AI_PROVIDER: off
-          ENABLE_AI_INSIGHT: "0"
-
-          WATCHLIST_FILE: data/saham_pantauan.txt
-          SYARIAH_UNIVERSE_FILE: data/syariah_stocks.txt
-          SYARIAH_MASTER_FILE: data/syariah_stocks_master.txt
-          DES_PDF_LOCAL: data/des_syariah_latest.pdf
-
-          SCREENER_LIMIT: "5"
-          SCREENER_PERIOD: "6mo"
-          SCREENER_INTERVAL: "1d"
-          SCREENER_MAX_PRICE: "500"
-          SCREENER_MIN_VOLUME_RATIO: "1.5"
-          SCREENER_MIN_VALUE_TRADED: "1000000000"
-          SCREENER_MIN_RSI: "55"
-          SCREENER_BATCH_SIZE: "40"
-          SCREENER_DELAY_SECONDS: "1.0"
-          SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
-
-          INCIDENTAL_ADDITIONS: "BSAI"
-          EXCLUDED_CODES: "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE"
-
-          TELEGRAM_PREFIX: "🤖 GitHub Actions Report"
-        run: |
-          python bot_saham.py
+        run: python bot_saham.py
