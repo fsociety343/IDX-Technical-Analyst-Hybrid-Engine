@@ -63,7 +63,7 @@ jobs:
           SCREENER_LIMIT: "5"
           SCREENER_PERIOD: "6mo"
           SCREENER_INTERVAL: "1d"
-          SCREENER_MAX_PRICE: "500"
+          SCREENER_MAX_PRICE: "100"
           SCREENER_MIN_VOLUME_RATIO: "1.5"
           SCREENER_MIN_VALUE_TRADED: "1000000000"
           SCREENER_MIN_RSI: "55"
