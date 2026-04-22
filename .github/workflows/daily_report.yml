@@ -43,6 +43,9 @@ jobs:
           DES_PDF_LOCAL: data/des_syariah_latest.pdf
           SCREENER_MAX_PRICE: "100"
           SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
+          ACCOUNT_SIZE: "3000000"
+          RISK_PER_TRADE_PCT: "1"
+          MAX_STOP_PCT: "5"
         run: |
           echo "RUN_MODE=$RUN_MODE"
           echo "WATCHLIST_FILE=$WATCHLIST_FILE"
@@ -51,6 +54,9 @@ jobs:
           echo "DES_PDF_LOCAL=$DES_PDF_LOCAL"
           echo "SCREENER_MAX_PRICE=$SCREENER_MAX_PRICE"
           echo "SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE=$SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE"
+          echo "ACCOUNT_SIZE=$ACCOUNT_SIZE"
+          echo "RISK_PER_TRADE_PCT=$RISK_PER_TRADE_PCT"
+          echo "MAX_STOP_PCT=$MAX_STOP_PCT"
 
       - name: Run stock bot
         env:
@@ -71,7 +77,7 @@ jobs:
           SCREENER_LIMIT: "5"
           SCREENER_PERIOD: "6mo"
           SCREENER_INTERVAL: "1d"
-          SCREENER_MAX_PRICE: "200"
+          SCREENER_MAX_PRICE: "100"
           SCREENER_MIN_VOLUME_RATIO: "1.5"
           SCREENER_MIN_VALUE_TRADED: "1000000000"
           SCREENER_MIN_RSI: "55"
@@ -80,9 +86,13 @@ jobs:
           SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
 
           MIN_ACCEPTABLE_RR: "1.2"
+          ACCOUNT_SIZE: "3000000"
+          RISK_PER_TRADE_PCT: "1"
+          MAX_STOP_PCT: "5"
+
           INCIDENTAL_ADDITIONS: "BSAI"
           EXCLUDED_CODES: "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE"
 
-          TELEGRAM_PREFIX: "🤖 Screener Syariah"
+          TELEGRAM_PREFIX: "🤖 Screener Syariah PRO"
         run: |
           python bot_saham.py
