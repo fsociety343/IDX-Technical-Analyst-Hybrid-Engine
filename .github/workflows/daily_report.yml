@@ -1,4 +1,4 @@
-name: Daily Stock Analysis Report
+name: Daily Stock Analysis Report PRO v2
 
 on:
   schedule:
@@ -46,6 +46,13 @@ jobs:
           ACCOUNT_SIZE: "3000000"
           RISK_PER_TRADE_PCT: "1"
           MAX_STOP_PCT: "5"
+          BREAKOUT_BUFFER_PCT: "1"
+          BREAKOUT_BUFFER_ABS: "1"
+          PULLBACK_EXPIRY_DAYS: "5"
+          USE_MARKET_FILTER: "1"
+          MARKET_SYMBOL: "^JKSE"
+          MOVE_SL_TO_BEP_AT_PCT: "5"
+          PARTIAL_TAKE_PROFIT_AT_TP1_PCT: "50"
         run: |
           echo "RUN_MODE=$RUN_MODE"
           echo "WATCHLIST_FILE=$WATCHLIST_FILE"
@@ -57,6 +64,13 @@ jobs:
           echo "ACCOUNT_SIZE=$ACCOUNT_SIZE"
           echo "RISK_PER_TRADE_PCT=$RISK_PER_TRADE_PCT"
           echo "MAX_STOP_PCT=$MAX_STOP_PCT"
+          echo "BREAKOUT_BUFFER_PCT=$BREAKOUT_BUFFER_PCT"
+          echo "BREAKOUT_BUFFER_ABS=$BREAKOUT_BUFFER_ABS"
+          echo "PULLBACK_EXPIRY_DAYS=$PULLBACK_EXPIRY_DAYS"
+          echo "USE_MARKET_FILTER=$USE_MARKET_FILTER"
+          echo "MARKET_SYMBOL=$MARKET_SYMBOL"
+          echo "MOVE_SL_TO_BEP_AT_PCT=$MOVE_SL_TO_BEP_AT_PCT"
+          echo "PARTIAL_TAKE_PROFIT_AT_TP1_PCT=$PARTIAL_TAKE_PROFIT_AT_TP1_PCT"
 
       - name: Run stock bot
         env:
@@ -90,9 +104,17 @@ jobs:
           RISK_PER_TRADE_PCT: "1"
           MAX_STOP_PCT: "5"
 
+          BREAKOUT_BUFFER_PCT: "1"
+          BREAKOUT_BUFFER_ABS: "1"
+          PULLBACK_EXPIRY_DAYS: "5"
+          USE_MARKET_FILTER: "1"
+          MARKET_SYMBOL: "^JKSE"
+          MOVE_SL_TO_BEP_AT_PCT: "5"
+          PARTIAL_TAKE_PROFIT_AT_TP1_PCT: "50"
+
           INCIDENTAL_ADDITIONS: "BSAI"
           EXCLUDED_CODES: "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE"
 
-          TELEGRAM_PREFIX: "🤖 Screener Syariah PRO"
+          TELEGRAM_PREFIX: "🤖 Screener Syariah PRO v2"
         run: |
           python bot_saham.py
