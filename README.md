@@ -561,9 +561,6 @@ Segala keputusan beli, jual, atau trading sepenuhnya menjadi tanggung jawab peng
 
 ## License
 
-Gunakan license sesuai kebutuhan project Anda.
-
-Contoh:
 ```text
-MIT License
+GNU General Public License v3.0
 ```
