@@ -43,11 +43,13 @@ Sistem dirancang modular dan tahan gagal dengan alur kerja berikut:
      - support & resistance
      - skenario entry / TP / SL
      - ranking screener
+     - setup grade
+     - filter avoid jika risk-reward buruk
 
 4. **Syariah Screener Engine:**
    - Melakukan scanning otomatis seluruh universe saham syariah
    - Menyaring kandidat berdasarkan:
-     - harga murah
+     - harga saham **di bawah 100**
      - volume meningkat
      - return harian positif
      - trend bullish valid
@@ -104,6 +106,8 @@ Output analisa meliputi:
 - Volume & money flow
 - Support & resistance
 - Strategi entry, TP, dan SL
+- Setup grade
+- Status avoid jika RR buruk
 
 ---
 
@@ -111,7 +115,7 @@ Output analisa meliputi:
 Bot dapat melakukan screening otomatis terhadap seluruh saham syariah aktif berdasarkan data pasar terbaru dari Yahoo Finance.
 
 Kriteria utama screener:
-- Harga saham `<= 500`
+- Harga saham **< 100**
 - Return 1 hari positif
 - Volume > rata-rata volume 20 hari
 - `Close > SMA20 > SMA50`
@@ -305,13 +309,15 @@ DES_PDF_URL=https://ojk.go.id/id/kanal/syariah/data-dan-statistik/daftar-efek-sy
 SCREENER_LIMIT=5
 SCREENER_PERIOD=6mo
 SCREENER_INTERVAL=1d
-SCREENER_MAX_PRICE=500
+SCREENER_MAX_PRICE=100
 SCREENER_MIN_VOLUME_RATIO=1.5
 SCREENER_MIN_VALUE_TRADED=1000000000
 SCREENER_MIN_RSI=55
 SCREENER_BATCH_SIZE=40
 SCREENER_DELAY_SECONDS=1.0
 SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE=1
+
+MIN_ACCEPTABLE_RR=1.2
 
 ENABLE_AI_INSIGHT=0
 AI_PROVIDER=off
@@ -386,29 +392,26 @@ python bot_saham.py
 📌 Screener Saham Syariah Trending
 
 Kriteria:
-• Harga ≤ 500
+• Harga < 100
 • Volume > 1.5x rata-rata 20 hari
 • Return harian positif
 • Close > SMA20 > SMA50
 • RSI dan MACD bullish
-
-1. $BUMI
-   Harga     : 122
-   Return 1D : 6.09%
-   Vol Ratio : 2.41x
-   Value     : 12.40B
-   RSI       : 67.3
-   Score     : 84.6
 ```
 
 ### Analisa teknikal
 ```text
-📊 ANALISIS TEKNIKAL — $BUMI (Daily)
+📊 ANALISIS TEKNIKAL — $XXXX (Daily)
 
-1. Tren Utama
-• Kondisi : Uptrend kuat
-• Bias    : Bullish kuat
-...
+7. Risk Reward
+• RR ke TP1 : 0.95
+• RR ke TP2 : 1.62
+• RR ke TP3 : 2.30
+• Kualitas  : Sehat
+
+8. Setup Rating
+• Grade     : B
+• Status    : LAYAK DIPANTAU
 ```
 
 ---
@@ -422,77 +425,11 @@ Simpan sebagai:
 .github/workflows/daily_report.yml
 ```
 
-Contoh:
-
-```yaml
-name: Daily Stock Analysis Report
-
-on:
-  schedule:
-    - cron: '0 2-9 * * 1-5'
-  workflow_dispatch:
-
-jobs:
-  analyze_and_report:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Prepare data directory
-        run: |
-          mkdir -p data
-          touch data/saham_pantauan.txt
-          touch data/syariah_stocks.txt
-          touch data/syariah_stocks_master.txt
-
-      - name: Run stock bot
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
-
-          RUN_MODE: screener_syariah
-          AI_PROVIDER: off
-          ENABLE_AI_INSIGHT: "0"
-
-          WATCHLIST_FILE: data/saham_pantauan.txt
-          SYARIAH_UNIVERSE_FILE: data/syariah_stocks.txt
-          SYARIAH_MASTER_FILE: data/syariah_stocks_master.txt
-          DES_PDF_LOCAL: data/des_syariah_latest.pdf
-
-          SCREENER_LIMIT: "5"
-          SCREENER_PERIOD: "6mo"
-          SCREENER_INTERVAL: "1d"
-          SCREENER_MAX_PRICE: "500"
-          SCREENER_MIN_VOLUME_RATIO: "1.5"
-          SCREENER_MIN_VALUE_TRADED: "1000000000"
-          SCREENER_MIN_RSI: "55"
-          SCREENER_BATCH_SIZE: "40"
-          SCREENER_DELAY_SECONDS: "1.0"
-          SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
-
-          INCIDENTAL_ADDITIONS: "BSAI"
-          EXCLUDED_CODES: "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE"
-
-          TELEGRAM_PREFIX: "🤖 Screener Syariah"
-        run: |
-          python bot_saham.py
-```
+Workflow sudah disesuaikan agar:
+- memakai `RUN_MODE=screener_syariah`
+- update universe syariah otomatis
+- memakai filter harga **< 100**
+- menampilkan debug runtime config
 
 ---
 
@@ -523,7 +460,9 @@ Jika AI insight tidak digunakan, API key AI dapat dikosongkan.
 7. urutkan berdasarkan skor
 8. kirim shortlist ke Telegram
 9. analisa teknikal kandidat terbaik
-10. kirim report final
+10. evaluasi RR dan setup grade
+11. tandai avoid jika setup buruk
+12. kirim report final
 
 ---
 
@@ -561,6 +500,4 @@ Segala keputusan beli, jual, atau trading sepenuhnya menjadi tanggung jawab peng
 
 ## License
 
-```text
-GNU General Public License v3.0
-```
+**GNU General Public License v3.0**
