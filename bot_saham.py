@@ -158,6 +158,40 @@ def denormalize_ticker(code: str) -> str:
     return str(code).strip().upper().replace(".JK", "")
 
 
+def get_company_name(ticker_yf: str, fallback_ticker: str = "") -> str:
+    try:
+        info = yf.Ticker(ticker_yf).info
+        name = info.get("longName") or info.get("shortName") or ""
+        if name:
+            return str(name).strip()
+    except Exception:
+        pass
+    return fallback_ticker
+
+
+def build_signal_and_strategy(meta: dict) -> tuple[str, str, str]:
+    style = str(meta.get("style", TRADING_STYLE)).lower()
+    action_status = str(meta.get("action_status", "WAIT FOR TRIGGER"))
+    preferred_label = str(meta.get("preferred_label", "Pullback"))
+
+    if action_status == "ENTRY READY":
+        signal = "BUY"
+    elif action_status == "WAIT FOR TRIGGER":
+        signal = "WAIT"
+    else:
+        signal = "SKIP"
+
+    if style == "scalping":
+        strategy = "Scalping breakout" if preferred_label.lower() == "breakout" else "Scalping pullback"
+    elif style == "daytrade":
+        strategy = "Momentum continuation" if preferred_label.lower() == "breakout" else "Daytrade pullback"
+    else:
+        strategy = "Swing breakout" if preferred_label.lower() == "breakout" else "Swing pullback"
+
+    notes = meta.get("notes_for_feed", "")
+    return signal, strategy, notes
+
+
 def get_safe_value(row, prefix):
     for col in row.index:
         if str(col).startswith(prefix):
@@ -1180,50 +1214,61 @@ Mode: {STYLE_CONFIG["label"]}
 # =========================================================
 def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
     market_filter = market_filter or get_market_filter_data()
-    generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     items = []
+
     if screened_df is not None and not screened_df.empty:
         for _, row in screened_df.iterrows():
             ticker = str(row.get("Ticker", "")).strip().upper()
+            ticker_yf = str(row.get("Ticker_YF", f"{ticker}.JK"))
+
+            tech_data = get_technical_data(ticker_yf)
+            if not tech_data:
+                continue
+
+            _, meta = generate_python_logic_report(tech_data, return_meta=True)
+
+            preferred_key = "breakout" if str(meta.get("preferred_label", "")).lower() == "breakout" else "pullback"
+            preferred = meta.get(preferred_key, {}) or {}
+
+            signal, strategy, _ = build_signal_and_strategy(meta)
+
+            notes_parts = []
+            if bool(row.get("Volume_OK", True)):
+                notes_parts.append("Volume naik")
+            if preferred_key == "breakout":
+                notes_parts.append("breakout resistance minor")
+            else:
+                notes_parts.append("rebound area pullback")
+            if bool(row.get("Market_OK", True)):
+                notes_parts.append("market mendukung")
+            notes = ", ".join(notes_parts).capitalize() if notes_parts else "Setup terdeteksi"
+
             items.append({
                 "ticker": ticker,
-                "ticker_yf": str(row.get("Ticker_YF", f"{ticker}.JK")),
-                "price": float(row.get("Close", 0) or 0),
-                "return_1d_pct": float(row.get("Ret_1D_Pct", 0) or 0),
-                "volume_ratio": float(row.get("Volume_Ratio", 0) or 0),
-                "value_traded": float(row.get("Value_Traded", 0) or 0),
-                "rsi14": float(row.get("RSI14", 0) or 0),
-                "score": float(row.get("Score", 0) or 0),
-                "eligible": bool(row.get("Eligible", True)),
-                "market_filter_ok": bool(row.get("Market_OK", True)),
-                "trend_ok": bool(row.get("Trend_OK", True)),
-                "price_ok": bool(row.get("Price_OK", True)),
-                "volume_ok": bool(row.get("Volume_OK", True)),
-                "return_ok": bool(row.get("Return_OK", True)),
-                "liquidity_ok": bool(row.get("Liquidity_OK", True)),
-                "style": TRADING_STYLE,
+                "name": get_company_name(ticker_yf, fallback_ticker=ticker),
+                "price": round(float(row.get("Close", 0) or 0), 2),
+                "change_pct": round(float(row.get("Ret_1D_Pct", 0) or 0), 2),
+                "score": round(float(row.get("Score", 0) or 0)),
+                "signal": signal,
+                "strategy": strategy,
+                "entry": round(float(preferred.get("entry", row.get("Close", 0) or 0)), 2),
+                "take_profit": round(float(preferred.get("tp1", 0) or 0), 2),
+                "stop_loss": round(float(preferred.get("sl_tactical", 0) or 0), 2),
+                "notes": notes
             })
+
+    items = sorted(items, key=lambda x: x.get("score", 0), reverse=True)
+
     return {
         "meta": {
-            "generated_at": generated_at,
-            "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
-            "run_mode": RUN_MODE,
-            "trading_style": TRADING_STYLE,
-            "style_label": STYLE_CONFIG["label"],
-            "screener_limit": SCREENER_LIMIT,
-            "screener_max_price": SCREENER_MAX_PRICE,
-            "market_symbol": market_filter.get("symbol", MARKET_SYMBOL),
-            "market_status": market_filter.get("status", ""),
-            "market_ok": bool(market_filter.get("market_ok", True)),
-            "feed_version": "1.0",
+            "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed"
         },
         "summary": {
             "count": len(items),
-            "top_tickers": [x["ticker"] for x in items[:10]],
-            "market_filter_blocks_entry_ready": not bool(market_filter.get("market_ok", True)),
-            "note": "Feed tetap terisi walau market filter kurang mendukung; gunakan meta.market_status dan item.market_filter_ok sebagai konteks eksekusi.",
+            "top_tickers": [x["ticker"] for x in items[:10]]
         },
-        "items": items,
+        "items": items
     }
 
 
