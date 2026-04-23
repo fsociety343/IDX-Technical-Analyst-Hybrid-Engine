@@ -102,7 +102,7 @@ DES_PDF_URL = os.environ.get(
 SCREENER_LIMIT = int(os.environ.get("SCREENER_LIMIT", "5"))
 SCREENER_PERIOD = os.environ.get("SCREENER_PERIOD", "6mo")
 SCREENER_INTERVAL = os.environ.get("SCREENER_INTERVAL", "1d")
-SCREENER_MAX_PRICE = float(os.environ.get("SCREENER_MAX_PRICE", "200"))
+SCREENER_MAX_PRICE = float(os.environ.get("SCREENER_MAX_PRICE", "100"))
 SCREENER_MIN_VOLUME_RATIO = float(os.environ.get("SCREENER_MIN_VOLUME_RATIO", "1.5"))
 SCREENER_MIN_VALUE_TRADED = float(os.environ.get("SCREENER_MIN_VALUE_TRADED", "1000000000"))
 SCREENER_MIN_RSI = float(os.environ.get("SCREENER_MIN_RSI", "55"))
@@ -1216,48 +1216,90 @@ def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
     market_filter = market_filter or get_market_filter_data()
     items = []
 
+    if screened_df is None:
+        log("[FEED] screened_df = None")
+    elif screened_df.empty:
+        log("[FEED] screened_df kosong setelah proses screener")
+    else:
+        log(f"[FEED] mulai build JSON dari {len(screened_df)} kandidat")
+
     if screened_df is not None and not screened_df.empty:
         for _, row in screened_df.iterrows():
             ticker = str(row.get("Ticker", "")).strip().upper()
             ticker_yf = str(row.get("Ticker_YF", f"{ticker}.JK"))
+            log(f"[FEED] proses {ticker} / {ticker_yf}")
 
             tech_data = get_technical_data(ticker_yf)
-            if not tech_data:
-                continue
 
-            _, meta = generate_python_logic_report(tech_data, return_meta=True)
-
-            preferred_key = "breakout" if str(meta.get("preferred_label", "")).lower() == "breakout" else "pullback"
-            preferred = meta.get(preferred_key, {}) or {}
-
-            signal, strategy, _ = build_signal_and_strategy(meta)
+            # Fallback default supaya item tetap masuk JSON walaupun analisa detail gagal
+            name = get_company_name(ticker_yf, fallback_ticker=ticker)
+            price = round(float(row.get("Close", 0) or 0), 2)
+            change_pct = round(float(row.get("Ret_1D_Pct", 0) or 0), 2)
+            score = round(float(row.get("Score", 0) or 0))
+            signal = "WATCH"
+            strategy = f"{STYLE_CONFIG['label'].title()} screener"
+            entry = price
+            take_profit = 0
+            stop_loss = 0
 
             notes_parts = []
+            if bool(row.get("Trend_OK", True)):
+                notes_parts.append("trend sesuai filter")
             if bool(row.get("Volume_OK", True)):
-                notes_parts.append("Volume naik")
-            if preferred_key == "breakout":
-                notes_parts.append("breakout resistance minor")
+                notes_parts.append("volume naik")
+            if bool(row.get("Return_OK", True)):
+                notes_parts.append("return harian positif")
+            if not bool(row.get("Market_OK", True)):
+                notes_parts.append("market filter belum mendukung")
+
+            if tech_data:
+                try:
+                    _, meta = generate_python_logic_report(tech_data, return_meta=True)
+                    preferred_key = "breakout" if str(meta.get("preferred_label", "")).lower() == "breakout" else "pullback"
+                    preferred = meta.get(preferred_key, {}) or {}
+
+                    signal, strategy, _ = build_signal_and_strategy(meta)
+                    entry = round(float(preferred.get("entry", price) or price), 2)
+                    take_profit = round(float(preferred.get("tp1", 0) or 0), 2)
+                    stop_loss = round(float(preferred.get("sl_tactical", 0) or 0), 2)
+
+                    if preferred_key == "breakout":
+                        notes_parts.append("breakout resistance minor")
+                    else:
+                        notes_parts.append("rebound area pullback")
+
+                    action_status = str(meta.get("action_status", ""))
+                    setup_grade = str(meta.get("setup_grade", ""))
+                    if action_status:
+                        notes_parts.append(f"status {action_status.lower()}")
+                    if setup_grade:
+                        notes_parts.append(f"grade {setup_grade}")
+
+                except Exception as e:
+                    log(f"[FEED] {ticker} analisa detail gagal, pakai fallback dasar: {e}")
+                    notes_parts.append("analisa detail fallback")
             else:
-                notes_parts.append("rebound area pullback")
-            if bool(row.get("Market_OK", True)):
-                notes_parts.append("market mendukung")
-            notes = ", ".join(notes_parts).capitalize() if notes_parts else "Setup terdeteksi"
+                log(f"[FEED] {ticker} get_technical_data gagal, pakai fallback dasar")
+                notes_parts.append("analisa detail tidak tersedia")
+
+            notes = ", ".join(dict.fromkeys(notes_parts)).capitalize() if notes_parts else "Setup terdeteksi"
 
             items.append({
                 "ticker": ticker,
-                "name": get_company_name(ticker_yf, fallback_ticker=ticker),
-                "price": round(float(row.get("Close", 0) or 0), 2),
-                "change_pct": round(float(row.get("Ret_1D_Pct", 0) or 0), 2),
-                "score": round(float(row.get("Score", 0) or 0)),
+                "name": name,
+                "price": price,
+                "change_pct": change_pct,
+                "score": score,
                 "signal": signal,
                 "strategy": strategy,
-                "entry": round(float(preferred.get("entry", row.get("Close", 0) or 0)), 2),
-                "take_profit": round(float(preferred.get("tp1", 0) or 0), 2),
-                "stop_loss": round(float(preferred.get("sl_tactical", 0) or 0), 2),
+                "entry": entry,
+                "take_profit": take_profit,
+                "stop_loss": stop_loss,
                 "notes": notes
             })
 
     items = sorted(items, key=lambda x: x.get("score", 0), reverse=True)
+    log(f"[FEED] total item JSON akhir: {len(items)}")
 
     return {
         "meta": {
@@ -1279,6 +1321,7 @@ def export_screener_json(screened_df: pd.DataFrame, output_path: str = SCREENER_
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2)
     log(f"Screener JSON exported: {output_file}")
+    log(f"Screener JSON summary count: {payload.get('summary', {}).get('count', 0)}")
 
 # =========================================================
 # AI INSIGHT OPSIONAL
@@ -1672,6 +1715,12 @@ def run_screener_syariah_mode():
             log(f"Auto update universe gagal, lanjut pakai file existing: {e}")
 
     screened_df = screen_syariah_stocks(limit=SCREENER_LIMIT)
+    log(f"Jumlah kandidat screened_df: {0 if screened_df is None else len(screened_df)}")
+    if screened_df is not None and not screened_df.empty:
+        try:
+            log(f"Kandidat screener: {screened_df[['Ticker', 'Close', 'Score']].to_dict(orient='records')}")
+        except Exception:
+            pass
     export_screener_json(screened_df)
     log(f"Jumlah kandidat screener: {0 if screened_df is None else len(screened_df)}")
 
@@ -1702,6 +1751,12 @@ def run_hybrid_mode():
             log(f"Auto update universe gagal, lanjut pakai file existing: {e}")
 
     screened_df = screen_syariah_stocks(limit=SCREENER_LIMIT)
+    log(f"Jumlah kandidat screened_df: {0 if screened_df is None else len(screened_df)}")
+    if screened_df is not None and not screened_df.empty:
+        try:
+            log(f"Kandidat screener: {screened_df[['Ticker', 'Close', 'Score']].to_dict(orient='records')}")
+        except Exception:
+            pass
     export_screener_json(screened_df)
     send_to_telegram(format_screener_telegram(screened_df, max_items=SCREENER_LIMIT))
 
