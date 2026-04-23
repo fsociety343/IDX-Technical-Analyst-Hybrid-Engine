@@ -1,11 +1,41 @@
 {
   "meta": {
-    "generated_at": "2026-04-23T02:24:20Z",
+    "generated_at": "2026-04-23T02:39:10Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed"
   },
   "summary": {
-    "count": 0,
-    "top_tickers": []
+    "count": 2,
+    "top_tickers": [
+      "MAXI",
+      "KOTA"
+    ]
   },
-  "items": []
+  "items": [
+    {
+      "ticker": "MAXI",
+      "name": "PT Maxindo Karya Anugerah Tbk",
+      "price": 56.0,
+      "change_pct": 5.66,
+      "score": 8748,
+      "signal": "WAIT",
+      "strategy": "Scalping pullback",
+      "entry": 52.8,
+      "take_profit": 56.33,
+      "stop_loss": 52.54,
+      "notes": "Trend sesuai filter, volume naik, return harian positif, market filter belum mendukung, rebound area pullback, status wait for trigger, grade c"
+    },
+    {
+      "ticker": "KOTA",
+      "name": "PT DMS Propertindo Tbk",
+      "price": 152.0,
+      "change_pct": 11.76,
+      "score": 8675,
+      "signal": "WAIT",
+      "strategy": "Scalping pullback",
+      "entry": 113.0,
+      "take_profit": 157.0,
+      "stop_loss": 112.44,
+      "notes": "Trend sesuai filter, volume naik, return harian positif, market filter belum mendukung, rebound area pullback, status wait for trigger, grade c"
+    }
+  ]
 }
