@@ -1,0 +1,20 @@
+{
+  "meta": {
+    "generated_at": "2026-04-23T01:32:03Z",
+    "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
+    "run_mode": "hybrid",
+    "trading_style": "scalping",
+    "style_label": "SCALPING",
+    "screener_limit": 5,
+    "screener_max_price": 200.0,
+    "market_symbol": "^JKSE",
+    "market_status": "Sideways sehat / masih mendukung",
+    "market_ok": false,
+    "feed_version": "1.0"
+  },
+  "summary": {
+    "count": 0,
+    "top_tickers": []
+  },
+  "items": []
+}
