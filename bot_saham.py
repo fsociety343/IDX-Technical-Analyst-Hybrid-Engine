@@ -1195,6 +1195,12 @@ def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
                 "rsi14": float(row.get("RSI14", 0) or 0),
                 "score": float(row.get("Score", 0) or 0),
                 "eligible": bool(row.get("Eligible", True)),
+                "market_filter_ok": bool(row.get("Market_OK", True)),
+                "trend_ok": bool(row.get("Trend_OK", True)),
+                "price_ok": bool(row.get("Price_OK", True)),
+                "volume_ok": bool(row.get("Volume_OK", True)),
+                "return_ok": bool(row.get("Return_OK", True)),
+                "liquidity_ok": bool(row.get("Liquidity_OK", True)),
                 "style": TRADING_STYLE,
             })
     return {
@@ -1214,6 +1220,8 @@ def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
         "summary": {
             "count": len(items),
             "top_tickers": [x["ticker"] for x in items[:10]],
+            "market_filter_blocks_entry_ready": not bool(market_filter.get("market_ok", True)),
+            "note": "Feed tetap terisi walau market filter kurang mendukung; gunakan meta.market_status dan item.market_filter_ok sebagai konteks eksekusi.",
         },
         "items": items,
     }
@@ -1384,7 +1392,8 @@ def _analyze_screener_row(ticker: str, df: pd.DataFrame, market_ok=True):
     liquidity_ok = value_traded >= SCREENER_MIN_VALUE_TRADED
     market_filter_ok = market_ok if USE_MARKET_FILTER else True
 
-    eligible = all([trend_ok, price_ok, volume_ok, return_ok, liquidity_ok, market_filter_ok])
+    # Market filter disimpan sebagai konteks, bukan pemblokir total feed JSON/web app.
+    eligible = all([trend_ok, price_ok, volume_ok, return_ok, liquidity_ok])
 
     normalized_volume = min(volume_ratio, 3.0) / 3.0
     normalized_ret = min(max(ret_1d, 0.0), 10.0) / 10.0
