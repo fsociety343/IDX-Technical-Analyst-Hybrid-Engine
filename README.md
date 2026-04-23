@@ -98,3 +98,64 @@ Isi `screener_feed_url` di web app dengan:
 - Telegram tetap dipakai untuk notifikasi.
 - Feed JSON dipakai untuk integrasi sistem lain.
 - Pendekatan ini paling sederhana dan cocok untuk repo GitHub publik.
+
+## Update JSON Feed untuk Dashboard
+
+Patch ini menyesuaikan output JSON agar lebih lengkap untuk dashboard screener web app.
+
+## Field yang sekarang diisi
+
+### `meta`
+- `generated_at`
+- `source`
+- `run_mode`
+- `trading_style`
+- `style_label`
+- `market_symbol`
+- `market_status`
+- `market_ok`
+
+### `summary`
+- `count`
+- `top_tickers`
+- `avg_rr`
+- `avg_score`
+- `buy_bullish_count`
+
+### `items[]`
+- `ticker`
+- `name`
+- `price`
+- `last`
+- `change_pct`
+- `score`
+- `signal`
+- `strategy`
+- `entry`
+- `take_profit`
+- `take_profit_1`
+- `take_profit_2`
+- `tp1`
+- `tp2`
+- `stop_loss`
+- `sl`
+- `rr`
+- `volume_ratio`
+- `vol_ratio`
+- `value_traded`
+- `value`
+- `notes`
+- `action_status`
+- `setup_grade`
+- `market_filter_ok`
+
+Patch ini dibuat agar card dashboard seperti:
+- Total Kandidat
+- Avg RR
+- Avg Score
+- Buy/Bullish
+- Generated At
+- Run Mode
+- Last / Entry / SL / TP1 / TP2 / RR / Vol Ratio / Value
+
+bisa langsung diisi dari JSON.
