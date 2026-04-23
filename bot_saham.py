@@ -1231,16 +1231,23 @@ def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
 
             tech_data = get_technical_data(ticker_yf)
 
-            # Fallback default supaya item tetap masuk JSON walaupun analisa detail gagal
             name = get_company_name(ticker_yf, fallback_ticker=ticker)
             price = round(float(row.get("Close", 0) or 0), 2)
             change_pct = round(float(row.get("Ret_1D_Pct", 0) or 0), 2)
-            score = round(float(row.get("Score", 0) or 0))
+            score = int(round(float(row.get("Score", 0) or 0)))
+            volume_ratio = round(float(row.get("Volume_Ratio", 0) or 0), 2)
+            value_traded = round(float(row.get("Value_Traded", 0) or 0), 2)
+
             signal = "WATCH"
             strategy = f"{STYLE_CONFIG['label'].title()} screener"
             entry = price
-            take_profit = 0
-            stop_loss = 0
+            tp1 = 0.0
+            tp2 = 0.0
+            stop_loss = 0.0
+            rr = 0.0
+            setup_grade = ""
+            action_status = ""
+            preferred_key = STYLE_CONFIG.get("preferred_scenario", "pullback")
 
             notes_parts = []
             if bool(row.get("Trend_OK", True)):
@@ -1255,21 +1262,32 @@ def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
             if tech_data:
                 try:
                     _, meta = generate_python_logic_report(tech_data, return_meta=True)
-                    preferred_key = "breakout" if str(meta.get("preferred_label", "")).lower() == "breakout" else "pullback"
-                    preferred = meta.get(preferred_key, {}) or {}
 
-                    signal, strategy, _ = build_signal_and_strategy(meta)
+                    if STYLE_CONFIG.get("preferred_scenario", "pullback") == "breakout":
+                        preferred_key = "breakout" if meta.get("breakout", {}).get("rr_tactical", 0) >= MIN_ACCEPTABLE_RR else "pullback"
+                    else:
+                        preferred_key = "pullback" if meta.get("pullback", {}).get("rr_tactical", 0) >= MIN_ACCEPTABLE_RR else "breakout"
+
+                    preferred = meta.get(preferred_key, {}) or {}
+                    signal, strategy, _ = build_signal_and_strategy({
+                        "style": meta.get("style", TRADING_STYLE),
+                        "action_status": meta.get("action_status", "WAIT FOR TRIGGER"),
+                        "preferred_label": "Breakout" if preferred_key == "breakout" else "Pullback",
+                    })
+
                     entry = round(float(preferred.get("entry", price) or price), 2)
-                    take_profit = round(float(preferred.get("tp1", 0) or 0), 2)
+                    tp1 = round(float(preferred.get("tp1", 0) or 0), 2)
+                    tp2 = round(float(preferred.get("tp2", 0) or 0), 2)
                     stop_loss = round(float(preferred.get("sl_tactical", 0) or 0), 2)
+                    rr = round(float(preferred.get("rr_tactical", 0) or 0), 2)
+                    setup_grade = str(meta.get("setup_grade", "") or "")
+                    action_status = str(meta.get("action_status", "") or "")
 
                     if preferred_key == "breakout":
                         notes_parts.append("breakout resistance minor")
                     else:
                         notes_parts.append("rebound area pullback")
 
-                    action_status = str(meta.get("action_status", ""))
-                    setup_grade = str(meta.get("setup_grade", ""))
                     if action_status:
                         notes_parts.append(f"status {action_status.lower()}")
                     if setup_grade:
@@ -1288,27 +1306,54 @@ def build_screener_feed_json(screened_df: pd.DataFrame, market_filter=None):
                 "ticker": ticker,
                 "name": name,
                 "price": price,
+                "last": price,
                 "change_pct": change_pct,
                 "score": score,
                 "signal": signal,
                 "strategy": strategy,
                 "entry": entry,
-                "take_profit": take_profit,
+                "take_profit": tp1,
+                "take_profit_1": tp1,
+                "take_profit_2": tp2,
+                "tp1": tp1,
+                "tp2": tp2,
                 "stop_loss": stop_loss,
-                "notes": notes
+                "sl": stop_loss,
+                "rr": rr,
+                "volume_ratio": volume_ratio,
+                "vol_ratio": volume_ratio,
+                "value_traded": value_traded,
+                "value": value_traded,
+                "notes": notes,
+                "action_status": action_status,
+                "setup_grade": setup_grade,
+                "market_filter_ok": bool(row.get("Market_OK", True))
             })
 
     items = sorted(items, key=lambda x: x.get("score", 0), reverse=True)
+    buy_bullish_count = sum(1 for x in items if str(x.get("signal", "")).upper() == "BUY")
+    avg_rr = round(sum(float(x.get("rr", 0) or 0) for x in items) / len(items), 2) if items else 0.0
+    avg_score = round(sum(float(x.get("score", 0) or 0) for x in items) / len(items), 2) if items else 0.0
+
     log(f"[FEED] total item JSON akhir: {len(items)}")
 
     return {
         "meta": {
             "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed"
+            "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
+            "run_mode": RUN_MODE,
+            "trading_style": TRADING_STYLE,
+            "style_label": STYLE_CONFIG["label"],
+            "market_symbol": market_filter.get("symbol", MARKET_SYMBOL),
+            "market_status": market_filter.get("status", ""),
+            "market_ok": bool(market_filter.get("market_ok", True))
         },
         "summary": {
             "count": len(items),
-            "top_tickers": [x["ticker"] for x in items[:10]]
+            "top_tickers": [x["ticker"] for x in items[:10]],
+            "avg_rr": avg_rr,
+            "avg_score": avg_score,
+            "buy_bullish_count": buy_bullish_count
         },
         "items": items
     }
