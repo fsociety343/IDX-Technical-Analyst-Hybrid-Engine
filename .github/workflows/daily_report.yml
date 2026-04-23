@@ -1,11 +1,12 @@
-name: Daily Stock Analysis Report PRO v2
+name: Daily Stock Analysis Report PRO v3 Feed
 
 on:
   schedule:
-    # Setiap 1 jam saat jam bursa WIB (Senin-Jumat)
-    # WIB 09:00-16:00 = UTC 02:00-09:00
     - cron: '0 2-9 * * 1-5'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   analyze_and_report:
@@ -15,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -33,44 +36,7 @@ jobs:
           touch data/saham_pantauan.txt
           touch data/syariah_stocks.txt
           touch data/syariah_stocks_master.txt
-
-      - name: Debug runtime config
-        env:
-          RUN_MODE: screener_syariah
-          WATCHLIST_FILE: data/saham_pantauan.txt
-          SYARIAH_UNIVERSE_FILE: data/syariah_stocks.txt
-          SYARIAH_MASTER_FILE: data/syariah_stocks_master.txt
-          DES_PDF_LOCAL: data/des_syariah_latest.pdf
-          SCREENER_MAX_PRICE: "100"
-          SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
-          ACCOUNT_SIZE: "3000000"
-          RISK_PER_TRADE_PCT: "1"
-          MAX_STOP_PCT: "5"
-          BREAKOUT_BUFFER_PCT: "1"
-          BREAKOUT_BUFFER_ABS: "1"
-          PULLBACK_EXPIRY_DAYS: "5"
-          USE_MARKET_FILTER: "1"
-          MARKET_SYMBOL: "^JKSE"
-          MOVE_SL_TO_BEP_AT_PCT: "5"
-          PARTIAL_TAKE_PROFIT_AT_TP1_PCT: "50"
-        run: |
-          echo "RUN_MODE=$RUN_MODE"
-          echo "WATCHLIST_FILE=$WATCHLIST_FILE"
-          echo "SYARIAH_UNIVERSE_FILE=$SYARIAH_UNIVERSE_FILE"
-          echo "SYARIAH_MASTER_FILE=$SYARIAH_MASTER_FILE"
-          echo "DES_PDF_LOCAL=$DES_PDF_LOCAL"
-          echo "SCREENER_MAX_PRICE=$SCREENER_MAX_PRICE"
-          echo "SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE=$SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE"
-          echo "ACCOUNT_SIZE=$ACCOUNT_SIZE"
-          echo "RISK_PER_TRADE_PCT=$RISK_PER_TRADE_PCT"
-          echo "MAX_STOP_PCT=$MAX_STOP_PCT"
-          echo "BREAKOUT_BUFFER_PCT=$BREAKOUT_BUFFER_PCT"
-          echo "BREAKOUT_BUFFER_ABS=$BREAKOUT_BUFFER_ABS"
-          echo "PULLBACK_EXPIRY_DAYS=$PULLBACK_EXPIRY_DAYS"
-          echo "USE_MARKET_FILTER=$USE_MARKET_FILTER"
-          echo "MARKET_SYMBOL=$MARKET_SYMBOL"
-          echo "MOVE_SL_TO_BEP_AT_PCT=$MOVE_SL_TO_BEP_AT_PCT"
-          echo "PARTIAL_TAKE_PROFIT_AT_TP1_PCT=$PARTIAL_TAKE_PROFIT_AT_TP1_PCT"
+          touch data/latest_screener.json
 
       - name: Run stock bot
         env:
@@ -80,6 +46,7 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
           RUN_MODE: hybrid
+          TRADING_STYLE: scalping
           AI_PROVIDER: off
           ENABLE_AI_INSIGHT: "0"
 
@@ -87,6 +54,7 @@ jobs:
           SYARIAH_UNIVERSE_FILE: data/syariah_stocks.txt
           SYARIAH_MASTER_FILE: data/syariah_stocks_master.txt
           DES_PDF_LOCAL: data/des_syariah_latest.pdf
+          SCREENER_JSON_OUTPUT: data/latest_screener.json
 
           SCREENER_LIMIT: "5"
           SCREENER_PERIOD: "6mo"
@@ -99,7 +67,7 @@ jobs:
           SCREENER_DELAY_SECONDS: "1.0"
           SCREENER_ENABLE_AUTO_UPDATE_UNIVERSE: "1"
 
-          MIN_ACCEPTABLE_RR: "1.2"
+          MIN_ACCEPTABLE_RR: "1.5"
           ACCOUNT_SIZE: "3000000"
           RISK_PER_TRADE_PCT: "1"
           MAX_STOP_PCT: "5"
@@ -115,6 +83,20 @@ jobs:
           INCIDENTAL_ADDITIONS: "BSAI"
           EXCLUDED_CODES: "ALDI,BRAU,CPDW,INSA,MASA,RINA,SIMM,SING,SQBB,TRUE"
 
-          TELEGRAM_PREFIX: "🤖 Screener Syariah PRO v2"
+          TELEGRAM_PREFIX: "🤖 Screener Syariah PRO v3 Feed"
         run: |
           python bot_saham.py
+
+      - name: Commit latest screener feed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add data/latest_screener.json data/syariah_stocks.txt data/syariah_stocks_master.txt
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Update latest screener feed [skip ci]"
+            git push
+          fi
