@@ -1,100 +1,11 @@
 {
   "meta": {
-    "generated_at": "2026-04-23T02:10:25Z",
-    "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
-    "run_mode": "hybrid",
-    "trading_style": "scalping",
-    "style_label": "SCALPING",
-    "screener_limit": 5,
-    "screener_max_price": 200.0,
-    "market_symbol": "^JKSE",
-    "market_status": "Sideways sehat / masih mendukung",
-    "market_ok": false,
-    "feed_version": "1.0"
+    "generated_at": "2026-04-23T02:17:27Z",
+    "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed"
   },
   "summary": {
-    "count": 4,
-    "top_tickers": [
-      "KOTA",
-      "MERI",
-      "BMTR",
-      "VERN"
-    ],
-    "market_filter_blocks_entry_ready": true,
-    "note": "Feed tetap terisi walau market filter kurang mendukung; gunakan meta.market_status dan item.market_filter_ok sebagai konteks eksekusi."
+    "count": 0,
+    "top_tickers": []
   },
-  "items": [
-    {
-      "ticker": "KOTA",
-      "ticker_yf": "KOTA.JK",
-      "price": 136.0,
-      "return_1d_pct": 29.52,
-      "volume_ratio": 7.47,
-      "value_traded": 658854747200.0,
-      "rsi14": 89.41,
-      "score": 9967.63,
-      "eligible": true,
-      "market_filter_ok": false,
-      "trend_ok": true,
-      "price_ok": true,
-      "volume_ok": true,
-      "return_ok": true,
-      "liquidity_ok": true,
-      "style": "scalping"
-    },
-    {
-      "ticker": "MERI",
-      "ticker_yf": "MERI.JK",
-      "price": 185.0,
-      "return_1d_pct": 24.16,
-      "volume_ratio": 3.29,
-      "value_traded": 15884673500.0,
-      "rsi14": 74.11,
-      "score": 9937.82,
-      "eligible": true,
-      "market_filter_ok": false,
-      "trend_ok": true,
-      "price_ok": true,
-      "volume_ok": true,
-      "return_ok": true,
-      "liquidity_ok": true,
-      "style": "scalping"
-    },
-    {
-      "ticker": "BMTR",
-      "ticker_yf": "BMTR.JK",
-      "price": 193.0,
-      "return_1d_pct": 3.76,
-      "volume_ratio": 1.87,
-      "value_traded": 41301150800.0,
-      "rsi14": 87.23,
-      "score": 7354.78,
-      "eligible": true,
-      "market_filter_ok": false,
-      "trend_ok": true,
-      "price_ok": true,
-      "volume_ok": true,
-      "return_ok": true,
-      "liquidity_ok": true,
-      "style": "scalping"
-    },
-    {
-      "ticker": "VERN",
-      "ticker_yf": "VERN.JK",
-      "price": 142.0,
-      "return_1d_pct": 2.9,
-      "volume_ratio": 1.55,
-      "value_traded": 1870296200.0,
-      "rsi14": 75.16,
-      "score": 6005.91,
-      "eligible": true,
-      "market_filter_ok": false,
-      "trend_ok": true,
-      "price_ok": true,
-      "volume_ok": true,
-      "return_ok": true,
-      "liquidity_ok": true,
-      "style": "scalping"
-    }
-  ]
+  "items": []
 }
