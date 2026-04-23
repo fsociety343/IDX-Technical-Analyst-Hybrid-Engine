@@ -3,7 +3,7 @@ import re
 import time
 import json
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 import requests
 import yfinance as yf
