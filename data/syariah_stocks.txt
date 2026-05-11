@@ -1,5 +1,5 @@
 # Universe saham syariah untuk screener yfinance
-# Generated at 2026-05-08 10:27:28
+# Generated at 2026-05-11 06:03:20
 AADI
 AALI
 ABMM
