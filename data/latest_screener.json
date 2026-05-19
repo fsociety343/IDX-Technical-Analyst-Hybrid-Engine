@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-05-18T11:11:13Z",
+    "generated_at": "2026-05-19T06:14:14Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
@@ -10,41 +10,11 @@
     "market_ok": false
   },
   "summary": {
-    "count": 1,
-    "top_tickers": [
-      "NTBK"
-    ],
-    "avg_rr": 4.18,
-    "avg_score": 7413.0,
+    "count": 0,
+    "top_tickers": [],
+    "avg_rr": 0.0,
+    "avg_score": 0.0,
     "buy_bullish_count": 0
   },
-  "items": [
-    {
-      "ticker": "NTBK",
-      "name": "PT Nusatama Berkah Tbk",
-      "price": 100.0,
-      "last": 100.0,
-      "change_pct": 5.26,
-      "score": 7413,
-      "signal": "WAIT",
-      "strategy": "Scalping breakout",
-      "entry": 101.81,
-      "take_profit": 107.0,
-      "take_profit_1": 107.0,
-      "take_profit_2": 114.49,
-      "tp1": 107.0,
-      "tp2": 114.49,
-      "stop_loss": 98.78,
-      "sl": 98.78,
-      "rr": 4.18,
-      "volume_ratio": 1.68,
-      "vol_ratio": 1.68,
-      "value_traded": 17079220000.0,
-      "value": 17079220000.0,
-      "notes": "Trend sesuai filter, volume naik, return harian positif, market filter belum mendukung, breakout resistance minor, status wait for trigger, grade c",
-      "action_status": "WAIT FOR TRIGGER",
-      "setup_grade": "C",
-      "market_filter_ok": false
-    }
-  ]
+  "items": []
 }
