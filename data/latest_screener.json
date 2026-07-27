@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-07-24T11:06:54Z",
+    "generated_at": "2026-07-27T05:55:49Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
@@ -10,11 +10,41 @@
     "market_ok": false
   },
   "summary": {
-    "count": 0,
-    "top_tickers": [],
-    "avg_rr": 0.0,
-    "avg_score": 0.0,
+    "count": 1,
+    "top_tickers": [
+      "PAMG"
+    ],
+    "avg_rr": 3.69,
+    "avg_score": 9517.0,
     "buy_bullish_count": 0
   },
-  "items": []
+  "items": [
+    {
+      "ticker": "PAMG",
+      "name": "PT Bima Sakti Pertiwi Tbk",
+      "price": 65.0,
+      "last": 65.0,
+      "change_pct": 18.18,
+      "score": 9517,
+      "signal": "WAIT",
+      "strategy": "Scalping breakout",
+      "entry": 67.0,
+      "take_profit": 70.62,
+      "take_profit_1": 70.62,
+      "take_profit_2": 75.56,
+      "tp1": 70.62,
+      "tp2": 75.56,
+      "stop_loss": 64.68,
+      "sl": 64.68,
+      "rr": 3.69,
+      "volume_ratio": 2.91,
+      "vol_ratio": 2.91,
+      "value_traded": 6458978500.0,
+      "value": 6458978500.0,
+      "notes": "Trend sesuai filter, volume naik, return harian positif, market filter belum mendukung, breakout resistance minor, status wait for trigger, grade c",
+      "action_status": "WAIT FOR TRIGGER",
+      "setup_grade": "C",
+      "market_filter_ok": false
+    }
+  ]
 }
