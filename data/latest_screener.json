@@ -1,13 +1,13 @@
 {
   "meta": {
-    "generated_at": "2026-07-29T08:48:25Z",
+    "generated_at": "2026-07-29T11:30:12Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
     "style_label": "SCALPING",
     "market_symbol": "^JKSE",
     "market_status": "Sideways sehat / masih mendukung",
-    "market_ok": false
+    "market_ok": true
   },
   "summary": {
     "count": 0,
