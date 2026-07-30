@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-07-30T05:14:08Z",
+    "generated_at": "2026-07-30T08:35:11Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
@@ -14,36 +14,36 @@
     "top_tickers": [
       "PADA"
     ],
-    "avg_rr": 3.78,
-    "avg_score": 8823.0,
-    "buy_bullish_count": 1
+    "avg_rr": 6.27,
+    "avg_score": 9918.0,
+    "buy_bullish_count": 0
   },
   "items": [
     {
       "ticker": "PADA",
       "name": "PT Personel Alih Daya Tbk",
-      "price": 129.0,
-      "last": 129.0,
-      "change_pct": 5.74,
-      "score": 8823,
-      "signal": "BUY",
+      "price": 138.0,
+      "last": 138.0,
+      "change_pct": 13.11,
+      "score": 9918,
+      "signal": "WAIT",
       "strategy": "Scalping breakout",
-      "entry": 130.37,
-      "take_profit": 134.67,
-      "take_profit_1": 134.67,
-      "take_profit_2": 145.0,
-      "tp1": 134.67,
-      "tp2": 145.0,
-      "stop_loss": 126.5,
-      "sl": 126.5,
-      "rr": 3.78,
-      "volume_ratio": 2.81,
-      "vol_ratio": 2.81,
-      "value_traded": 11047224600.0,
-      "value": 11047224600.0,
-      "notes": "Trend sesuai filter, volume naik, return harian positif, breakout resistance minor, status entry ready, grade a",
-      "action_status": "ENTRY READY",
-      "setup_grade": "A",
+      "entry": 147.46,
+      "take_profit": 163.47,
+      "take_profit_1": 163.47,
+      "take_profit_2": 174.91,
+      "tp1": 163.47,
+      "tp2": 174.91,
+      "stop_loss": 143.08,
+      "sl": 143.08,
+      "rr": 6.27,
+      "volume_ratio": 4.76,
+      "vol_ratio": 4.76,
+      "value_traded": 22635808800.0,
+      "value": 22635808800.0,
+      "notes": "Trend sesuai filter, volume naik, return harian positif, breakout resistance minor, status wait for trigger, grade c",
+      "action_status": "WAIT FOR TRIGGER",
+      "setup_grade": "C",
       "market_filter_ok": true
     }
   ]
