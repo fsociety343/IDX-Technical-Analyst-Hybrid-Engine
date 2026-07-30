@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-07-29T11:30:12Z",
+    "generated_at": "2026-07-30T05:14:08Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
@@ -10,11 +10,41 @@
     "market_ok": true
   },
   "summary": {
-    "count": 0,
-    "top_tickers": [],
-    "avg_rr": 0.0,
-    "avg_score": 0.0,
-    "buy_bullish_count": 0
+    "count": 1,
+    "top_tickers": [
+      "PADA"
+    ],
+    "avg_rr": 3.78,
+    "avg_score": 8823.0,
+    "buy_bullish_count": 1
   },
-  "items": []
+  "items": [
+    {
+      "ticker": "PADA",
+      "name": "PT Personel Alih Daya Tbk",
+      "price": 129.0,
+      "last": 129.0,
+      "change_pct": 5.74,
+      "score": 8823,
+      "signal": "BUY",
+      "strategy": "Scalping breakout",
+      "entry": 130.37,
+      "take_profit": 134.67,
+      "take_profit_1": 134.67,
+      "take_profit_2": 145.0,
+      "tp1": 134.67,
+      "tp2": 145.0,
+      "stop_loss": 126.5,
+      "sl": 126.5,
+      "rr": 3.78,
+      "volume_ratio": 2.81,
+      "vol_ratio": 2.81,
+      "value_traded": 11047224600.0,
+      "value": 11047224600.0,
+      "notes": "Trend sesuai filter, volume naik, return harian positif, breakout resistance minor, status entry ready, grade a",
+      "action_status": "ENTRY READY",
+      "setup_grade": "A",
+      "market_filter_ok": true
+    }
+  ]
 }
