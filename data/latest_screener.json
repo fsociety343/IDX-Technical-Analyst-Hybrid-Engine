@@ -1,12 +1,12 @@
 {
   "meta": {
-    "generated_at": "2026-07-30T11:11:59Z",
+    "generated_at": "2026-07-31T05:40:59Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
     "style_label": "SCALPING",
     "market_symbol": "^JKSE",
-    "market_status": "Sideways sehat / masih mendukung",
+    "market_status": "Uptrend / mendukung",
     "market_ok": true
   },
   "summary": {
@@ -14,36 +14,36 @@
     "top_tickers": [
       "PADA"
     ],
-    "avg_rr": 6.27,
-    "avg_score": 9949.0,
-    "buy_bullish_count": 0
+    "avg_rr": 4.36,
+    "avg_score": 9157.0,
+    "buy_bullish_count": 1
   },
   "items": [
     {
       "ticker": "PADA",
       "name": "PT Personel Alih Daya Tbk",
-      "price": 141.0,
-      "last": 141.0,
-      "change_pct": 15.57,
-      "score": 9949,
-      "signal": "WAIT",
+      "price": 150.0,
+      "last": 150.0,
+      "change_pct": 6.38,
+      "score": 9157,
+      "signal": "BUY",
       "strategy": "Scalping breakout",
-      "entry": 147.46,
-      "take_profit": 163.48,
-      "take_profit_1": 163.48,
-      "take_profit_2": 174.92,
-      "tp1": 163.48,
-      "tp2": 174.92,
-      "stop_loss": 143.08,
-      "sl": 143.08,
-      "rr": 6.27,
-      "volume_ratio": 5.19,
-      "vol_ratio": 5.19,
-      "value_traded": 25937556300.0,
-      "value": 25937556300.0,
-      "notes": "Trend sesuai filter, volume naik, return harian positif, breakout resistance minor, status wait for trigger, grade c",
-      "action_status": "WAIT FOR TRIGGER",
-      "setup_grade": "C",
+      "entry": 152.51,
+      "take_profit": 161.0,
+      "take_profit_1": 161.0,
+      "take_profit_2": 172.27,
+      "tp1": 161.0,
+      "tp2": 172.27,
+      "stop_loss": 147.98,
+      "sl": 147.98,
+      "rr": 4.36,
+      "volume_ratio": 3.7,
+      "vol_ratio": 3.7,
+      "value_traded": 23833530000.0,
+      "value": 23833530000.0,
+      "notes": "Trend sesuai filter, volume naik, return harian positif, breakout resistance minor, status entry ready, grade a",
+      "action_status": "ENTRY READY",
+      "setup_grade": "A",
       "market_filter_ok": true
     }
   ]
