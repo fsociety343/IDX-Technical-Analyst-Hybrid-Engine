@@ -1,6 +1,6 @@
 {
   "meta": {
-    "generated_at": "2026-07-31T08:56:37Z",
+    "generated_at": "2026-07-31T11:33:15Z",
     "source": "IDX Technical Analyst Hybrid Engine PRO v3 Feed",
     "run_mode": "hybrid",
     "trading_style": "scalping",
@@ -37,10 +37,10 @@
       "stop_loss": 147.98,
       "sl": 147.98,
       "rr": 4.36,
-      "volume_ratio": 4.15,
-      "vol_ratio": 4.15,
-      "value_traded": 26362483200.0,
-      "value": 26362483200.0,
+      "volume_ratio": 4.24,
+      "vol_ratio": 4.24,
+      "value_traded": 27139219200.0,
+      "value": 27139219200.0,
       "notes": "Trend sesuai filter, volume naik, return harian positif, breakout resistance minor, status entry ready, grade a",
       "action_status": "ENTRY READY",
       "setup_grade": "A",
